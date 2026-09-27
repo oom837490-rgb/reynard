@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>مركز القيادة والسيطرة 🦅 - نسخة القوات المسلحة</title>
+    <title><title>منظومة Reynard للقيادة والسيطرة 🦅</title>/title>
     <style>
         /* [تم الحفاظ على جميع الأنماط كما هي دون تغيير] */
         :root {
@@ -20215,6 +20215,49 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     window.__refreshNightLeave__ = refreshNightLeave;
 
     console.log('🔄 Night Leave Live Refresh v1 loaded');
+})();
+</script>
+<!-- ============================================ -->
+<!-- 🛡️ إخفاء أزرار التكريم عن الزوار -->
+<!-- ============================================ -->
+<script id="__hide_viewer_award_buttons__">
+(function() {
+    'use strict';
+    
+    // دالة لإضافة التنسيقات
+    function applyViewerRestrictions() {
+        // التأكد من أن المستخدم زائر
+        if (window.__USER_ROLE__ !== 'viewer') return;
+        
+        // إضافة كود CSS لإخفاء الأزرار
+        if (!document.getElementById('__hide_award_buttons_css__')) {
+            var style = document.createElement('style');
+            style.id = '__hide_award_buttons_css__';
+            style.textContent = `
+                /* إخفاء أزرار الإرسال في بطاقات التكريم */
+                body.viewer-mode .award-card button,
+                /* إخفاء أزرار الإرسال في بطاقات الشفاء */
+                body.viewer-mode .healing-card button,
+                /* إخفاء أزرار الإرسال في بطاقات التحذير */
+                body.viewer-mode .warning-card-item button {
+                    display: none !important;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+
+    // تشغيل الكود عند التحميل
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', applyViewerRestrictions);
+    } else {
+        applyViewerRestrictions();
+    }
+    
+    // تشغيل دوري للتأكد (لأن البطاقات يتم رسمها ديناميكياً)
+    setInterval(applyViewerRestrictions, 1500);
+    
+    console.log('🛡️ Viewer award buttons hidden');
 })();
 </script>
 </body>
