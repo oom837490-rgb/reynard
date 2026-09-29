@@ -21388,6 +21388,910 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('🔍 Image Zoom v2 (Clean) loaded');
 })();
 </script>
+<!-- ============================================ -->
+<!-- 🖼️ Reynard Photo System — Full v2              -->
+<!-- قائمة الزائر: كل الأسماء + رتب + صور + كوده فقط -->
+<!-- للمدير: القائمة الأصلية كما هي — بدون أي تغيير -->
+<!-- ============================================ -->
+<script id="__reynard_photo_system_full_v2__">
+(function() {
+    'use strict';
+
+    if (window.__reynardPhotoSystemFullV2__) return;
+    window.__reynardPhotoSystemFullV2__ = true;
+
+    var MONTHLY_KEY = 'MIL_MONTHLY_PHOTO_V1';
+    var AVATAR_KEY  = 'MIL_AVATARS_V1';
+    var APP_COL     = 'reynard-app';
+
+    function isAdmin()  { return window.__USER_ROLE__ === 'admin'; }
+    function isViewer() { return window.__USER_ROLE__ === 'viewer'; }
+    function getViewerIdentity() { return window.__VIEWER_IDENTITY__ || null; }
+    function getViewerName() { var v = getViewerIdentity(); return v ? (v.name || '') : ''; }
+    function getViewerCode() { var v = getViewerIdentity(); return v ? String(v.code || '') : ''; }
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+        });
+    }
+    function loadJSON(key, def) {
+        try {
+            var v = JSON.parse(localStorage.getItem(key) || 'null');
+            return (v && typeof v === 'object') ? v : (def || {});
+        } catch(e) { return def || {}; }
+    }
+    function saveJSON(key, val) {
+        try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
+    }
+    function playSafe(t) {
+        try { if (typeof playSound === 'function') playSound(t); } catch(e) {}
+    }
+    function getPeopleList() {
+        try {
+            var p = JSON.parse(localStorage.getItem('MIL_FINAL_V15') || '[]');
+            return Array.isArray(p) ? p : [];
+        } catch(e) { return []; }
+    }
+
+    function compressImage(file, maxDim, quality) {
+        return new Promise(function(resolve, reject) {
+            if (!file) { reject('no file'); return; }
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var img = new Image();
+                img.onload = function() {
+                    var w = img.width, h = img.height;
+                    if (w > h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
+                    else if (h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
+                    var canvas = document.createElement('canvas');
+                    canvas.width = w; canvas.height = h;
+                    var ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(0, 0, w, h);
+                    ctx.drawImage(img, 0, 0, w, h);
+                    try { resolve(canvas.toDataURL('image/jpeg', quality || 0.78)); }
+                    catch(err) { reject(err); }
+                };
+                img.onerror = function() { reject('img error'); };
+                img.src = e.target.result;
+            };
+            reader.onerror = function() { reject('read error'); };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    window.__openImageFullscreen__ = function(src, caption) {
+        var existing = document.getElementById('__img_fullscreen__');
+        if (existing) existing.remove();
+
+        var modal = document.createElement('div');
+        modal.id = '__img_fullscreen__';
+        modal.style.cssText =
+            'position:fixed;top:0;left:0;width:100%;height:100%;' +
+            'background:#000;z-index:9999999;' +
+            'display:flex;align-items:center;justify-content:center;' +
+            'overflow:hidden;direction:ltr;touch-action:none;' +
+            'user-select:none;-webkit-user-select:none;cursor:zoom-in;';
+
+        var img = document.createElement('img');
+        img.src = src;
+        img.draggable = false;
+        img.style.cssText =
+            'max-width:100vw;max-height:100vh;object-fit:contain;' +
+            'user-select:none;-webkit-user-drag:none;pointer-events:none;' +
+            'will-change:transform;transform-origin:center center;';
+
+        var closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.innerHTML = '✖';
+        closeBtn.style.cssText =
+            'position:absolute;top:16px;right:16px;' +
+            'width:42px;height:42px;padding:0;' +
+            'background:rgba(0,0,0,0.55);' +
+            'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);' +
+            'color:#fff;border:1.5px solid rgba(255,255,255,0.35);' +
+            'border-radius:50%;font-size:18px;font-weight:bold;' +
+            'cursor:pointer;font-family:inherit;' +
+            'display:flex;align-items:center;justify-content:center;' +
+            'z-index:10;transition:all 0.25s ease;line-height:1;' +
+            'box-shadow:0 4px 20px rgba(0,0,0,0.6);';
+        closeBtn.onmouseenter = function() {
+            closeBtn.style.background = 'rgba(220,53,69,0.9)';
+            closeBtn.style.transform = 'scale(1.1)';
+        };
+        closeBtn.onmouseleave = function() {
+            closeBtn.style.background = 'rgba(0,0,0,0.55)';
+            closeBtn.style.transform = 'scale(1)';
+        };
+
+        modal.appendChild(img);
+        modal.appendChild(closeBtn);
+
+        if (caption) {
+            var cap = document.createElement('div');
+            cap.style.cssText =
+                'position:absolute;bottom:24px;left:50%;' +
+                'transform:translateX(-50%);padding:8px 18px;' +
+                'background:rgba(0,0,0,0.7);' +
+                'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);' +
+                'color:#D4AF37;font-size:13px;font-weight:bold;' +
+                'border-radius:20px;pointer-events:none;' +
+                'direction:rtl;font-family:inherit;' +
+                'border:1px solid rgba(212,175,55,0.4);' +
+                'max-width:85%;text-align:center;' +
+                'transition:opacity 0.6s ease;opacity:1;' +
+                'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+            cap.textContent = caption;
+            modal.appendChild(cap);
+            setTimeout(function() { cap.style.opacity = '0'; }, 3500);
+        }
+
+        document.body.appendChild(modal);
+
+        var state = { scale: 1, tx: 0, ty: 0, min: 1, max: 8 };
+
+        function apply() {
+            img.style.transform = 'translate(' + state.tx + 'px,' + state.ty + 'px) scale(' + state.scale + ')';
+        }
+        function clamp() {
+            if (state.scale <= 1.005) { state.tx = 0; state.ty = 0; return; }
+            var w = img.offsetWidth, h = img.offsetHeight;
+            var vw = window.innerWidth, vh = window.innerHeight;
+            var maxX = Math.max(0, (w * state.scale - vw) / 2);
+            var maxY = Math.max(0, (h * state.scale - vh) / 2);
+            state.tx = Math.max(-maxX, Math.min(maxX, state.tx));
+            state.ty = Math.max(-maxY, Math.min(maxY, state.ty));
+        }
+        function setScale(s, cx, cy) {
+            s = Math.max(state.min, Math.min(state.max, s));
+            if (Math.abs(s - state.scale) < 0.001) return;
+            if (cx !== undefined && cy !== undefined) {
+                var vw = window.innerWidth, vh = window.innerHeight;
+                var ox = cx - vw / 2, oy = cy - vh / 2;
+                var r = s / state.scale;
+                state.tx = ox + (state.tx - ox) * r;
+                state.ty = oy + (state.ty - oy) * r;
+            }
+            state.scale = s;
+            if (state.scale <= 1.005) { state.scale = 1; state.tx = 0; state.ty = 0; }
+            clamp(); apply();
+        }
+        function reset() { state.scale = 1; state.tx = 0; state.ty = 0; apply(); }
+
+        var t = { mode: null, sd: 0, ss: 1, sx: 0, sy: 0, stx: 0, sty: 0, lt: 0, lx: 0, ly: 0 };
+        function tDist(a, b) {
+            var dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
+            return Math.sqrt(dx*dx + dy*dy);
+        }
+
+        modal.addEventListener('touchstart', function(e) {
+            if (e.target === closeBtn) return;
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                t.mode = 'pinch';
+                t.sd = tDist(e.touches[0], e.touches[1]);
+                t.ss = state.scale;
+            } else if (e.touches.length === 1) {
+                var now = Date.now(), p = e.touches[0];
+                if (now - t.lt < 300 && Math.abs(p.clientX - t.lx) < 50 && Math.abs(p.clientY - t.ly) < 50) {
+                    e.preventDefault();
+                    if (state.scale > 1.2) reset();
+                    else setScale(3, p.clientX, p.clientY);
+                    t.lt = 0;
+                    return;
+                }
+                t.lt = now; t.lx = p.clientX; t.ly = p.clientY;
+                t.mode = 'pan';
+                t.sx = p.clientX; t.sy = p.clientY;
+                t.stx = state.tx; t.sty = state.ty;
+            }
+        }, { passive: false });
+
+        modal.addEventListener('touchmove', function(e) {
+            if (e.target === closeBtn) return;
+            if (t.mode === 'pinch' && e.touches.length === 2) {
+                e.preventDefault();
+                var d = tDist(e.touches[0], e.touches[1]);
+                var cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                var cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                setScale(t.ss * (d / t.sd), cx, cy);
+            } else if (t.mode === 'pan' && e.touches.length === 1 && state.scale > 1) {
+                e.preventDefault();
+                var p = e.touches[0];
+                state.tx = t.stx + (p.clientX - t.sx);
+                state.ty = t.sty + (p.clientY - t.sy);
+                clamp(); apply();
+            }
+        }, { passive: false });
+
+        modal.addEventListener('touchend', function(e) {
+            if (e.touches.length === 0) t.mode = null;
+        });
+
+        modal.addEventListener('wheel', function(e) {
+            if (e.target === closeBtn) return;
+            e.preventDefault();
+            var f = e.deltaY > 0 ? (1/1.15) : 1.15;
+            setScale(state.scale * f, e.clientX, e.clientY);
+        }, { passive: false });
+
+        var m = { down: false, sx: 0, sy: 0, stx: 0, sty: 0 };
+        modal.addEventListener('mousedown', function(e) {
+            if (e.target === closeBtn) return;
+            if (state.scale <= 1) return;
+            e.preventDefault();
+            m.down = true; m.sx = e.clientX; m.sy = e.clientY;
+            m.stx = state.tx; m.sty = state.ty;
+            modal.style.cursor = 'grabbing';
+        });
+        document.addEventListener('mousemove', function(e) {
+            if (!m.down) return;
+            state.tx = m.stx + (e.clientX - m.sx);
+            state.ty = m.sty + (e.clientY - m.sy);
+            clamp(); apply();
+        });
+        document.addEventListener('mouseup', function() {
+            if (m.down) { m.down = false; modal.style.cursor = state.scale > 1 ? 'grab' : 'zoom-in'; }
+        });
+        modal.addEventListener('dblclick', function(e) {
+            if (e.target === closeBtn) return;
+            e.preventDefault();
+            if (state.scale > 1.2) reset();
+            else setScale(3, e.clientX, e.clientY);
+        });
+
+        function close() {
+            modal.remove();
+            document.removeEventListener('keydown', kH);
+        }
+        closeBtn.onclick = function(e) { e.stopPropagation(); close(); };
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal && state.scale <= 1.05) close();
+        });
+        function kH(e) { if (e.key === 'Escape') close(); }
+        document.addEventListener('keydown', kH);
+    };
+
+    function getInitials(name) {
+        if (!name) return '؟';
+        var parts = name.trim().split(/\s+/);
+        if (parts.length === 1) return parts[0].charAt(0);
+        return parts[0].charAt(0) + (parts[1] ? parts[1].charAt(0) : '');
+    }
+    function getDefaultAvatar(name, isLeader) {
+        var initial = getInitials(name);
+        var icon = isLeader ? '🎖️' : '🪖';
+        var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
+            '<defs><linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">' +
+            '<stop offset="0%" style="stop-color:#0d1b2a;stop-opacity:1" />' +
+            '<stop offset="100%" style="stop-color:#1b263b;stop-opacity:1" />' +
+            '</linearGradient></defs>' +
+            '<rect width="200" height="200" fill="url(#g1)"/>' +
+            '<circle cx="100" cy="100" r="85" fill="none" stroke="#D4AF37" stroke-width="2" opacity="0.5"/>' +
+            '<text x="100" y="90" font-size="50" text-anchor="middle" fill="#D4AF37" opacity="0.4">' + icon + '</text>' +
+            '<text x="100" y="150" font-size="60" text-anchor="middle" fill="#D4AF37" font-weight="bold" font-family="Arial">' + esc(initial) + '</text>' +
+            '</svg>';
+        return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+    }
+
+    function getMonthKey() {
+        var y = new Date().getFullYear();
+        var m = String(new Date().getMonth() + 1).padStart(2, '0');
+        try {
+            var yEl = document.getElementById('nl-year');
+            var mEl = document.getElementById('nl-month');
+            if (yEl && yEl.value) y = parseInt(yEl.value);
+            if (mEl && mEl.value) m = String(parseInt(mEl.value)).padStart(2, '0');
+        } catch(e) {}
+        return y + '-' + m;
+    }
+    function monthLabel(key) {
+        var parts = key.split('-');
+        var monthsAr = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو',
+                        'أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+        return monthsAr[parseInt(parts[1]) - 1] + ' ' + parts[0];
+    }
+
+    function injectMonthlySection() {
+        if (document.getElementById('__monthly_photo_section__')) return;
+        var restView = document.getElementById('view-rest');
+        if (!restView) return;
+        var anchor = document.getElementById('night-leave-section');
+        var card = document.createElement('div');
+        card.id = '__monthly_photo_section__';
+        card.className = 'card';
+        card.style.cssText = 'margin-top:20px;';
+        if (anchor && anchor.parentNode) {
+            if (anchor.nextSibling) anchor.parentNode.insertBefore(card, anchor.nextSibling);
+            else anchor.parentNode.appendChild(card);
+        } else {
+            var firstCard = restView.querySelector('.card');
+            if (firstCard && firstCard.parentNode) firstCard.parentNode.appendChild(card);
+            else restView.appendChild(card);
+        }
+        renderMonthlySection();
+    }
+
+    function renderMonthlySection() {
+        var card = document.getElementById('__monthly_photo_section__');
+        if (!card) return;
+        var key = getMonthKey();
+        var photos = loadJSON(MONTHLY_KEY, {});
+        var src = photos[key] || '';
+        var label = monthLabel(key);
+
+        var html = '';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;' +
+                'flex-wrap:wrap;gap:8px;padding-bottom:10px;margin-bottom:12px;' +
+                'border-bottom:2px dashed var(--gold);">';
+        html += '<div style="color:var(--gold);font-size:15px;font-weight:bold;">📸 صورة جدول الإجازات اليدوي</div>';
+        html += '<div style="color:#888;font-size:12px;font-weight:bold;">📅 ' + label + '</div>';
+        html += '</div>';
+
+        if (src) {
+            html += '<div style="position:relative;background:#000;border:2px solid var(--gold);' +
+                    'border-radius:10px;overflow:hidden;cursor:pointer;" id="__monthly_photo_wrap__">';
+            html += '<img id="__monthly_photo_img__" src="' + src + '" ' +
+                    'style="width:100%;height:auto;display:block;" alt="صورة الشهر" loading="lazy">';
+            html += '<div style="position:absolute;bottom:0;left:0;right:0;padding:8px;' +
+                    'text-align:center;background:linear-gradient(0deg,rgba(0,0,0,0.85),transparent);' +
+                    'color:#D4AF37;font-size:11px;font-weight:bold;">🔍 اضغط للتكبير والتمرير</div>';
+            html += '</div>';
+        } else {
+            html += '<div style="text-align:center;padding:30px 15px;' +
+                    'background:rgba(0,0,0,0.4);border:2px dashed #444;' +
+                    'border-radius:10px;color:#888;">';
+            html += '<div style="font-size:50px;margin-bottom:8px;">📭</div>';
+            html += '<div style="font-size:13px;font-weight:bold;">لم يتم إرفاق صورة لهذا الشهر</div>';
+            if (isViewer()) {
+                html += '<div style="font-size:11px;color:#666;margin-top:6px;">سيتم رفعها من القيادة قريباً</div>';
+            }
+            html += '</div>';
+        }
+
+        if (isAdmin()) {
+            html += '<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;">';
+            html += '<button type="button" id="__monthly_upload_btn__" ' +
+                    'style="flex:1;padding:10px;background:linear-gradient(135deg,#00ff88,#00aa55);' +
+                    'color:#000;border:none;border-radius:8px;font-size:13px;font-weight:bold;' +
+                    'cursor:pointer;font-family:inherit;min-width:120px;">' +
+                    '📤 ' + (src ? 'تغيير الصورة' : 'رفع صورة') + '</button>';
+            if (src) {
+                html += '<button type="button" id="__monthly_delete_btn__" ' +
+                        'style="flex:1;padding:10px;background:linear-gradient(135deg,#dc3545,#8b0000);' +
+                        'color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:bold;' +
+                        'cursor:pointer;font-family:inherit;min-width:120px;">🗑️ حذف الصورة</button>';
+            }
+            html += '</div>';
+        }
+
+        card.innerHTML = html;
+        var imgWrap = document.getElementById('__monthly_photo_wrap__');
+        if (imgWrap) imgWrap.onclick = function() {
+            window.__openImageFullscreen__(src, 'صورة إجازات الوردية الليلية — ' + label);
+        };
+        var upBtn = document.getElementById('__monthly_upload_btn__');
+        if (upBtn) upBtn.onclick = handleMonthlyUpload;
+        var delBtn = document.getElementById('__monthly_delete_btn__');
+        if (delBtn) delBtn.onclick = handleMonthlyDelete;
+    }
+
+    function handleMonthlyUpload() {
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = function(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            if (file.size > 15 * 1024 * 1024) { alert('⚠️ الحد الأقصى 15 ميجا'); return; }
+            var card = document.getElementById('__monthly_photo_section__');
+            if (card) {
+                var old = card.querySelector('.__uploading_hint__');
+                if (old) old.remove();
+                var hint = document.createElement('div');
+                hint.className = '__uploading_hint__';
+                hint.style.cssText =
+                    'margin-top:10px;padding:8px;background:rgba(0,255,136,0.1);' +
+                    'border:1px dashed #00ff88;border-radius:6px;color:#00ff88;' +
+                    'font-size:12px;text-align:center;font-weight:bold;';
+                hint.textContent = '⏳ جاري ضغط الصورة...';
+                card.appendChild(hint);
+            }
+            compressImage(file, 1400, 0.78).then(function(dataUrl) {
+                var key = getMonthKey();
+                var photos = loadJSON(MONTHLY_KEY, {});
+                photos[key] = dataUrl;
+                saveJSON(MONTHLY_KEY, photos);
+                renderMonthlySection();
+                pushMonthlyToCloud();
+                playSafe('success');
+                alert('✅ تم رفع الصورة لشهر ' + monthLabel(key));
+            }).catch(function(err) {
+                alert('❌ فشل: ' + (err.message || err));
+                var h = document.querySelector('.__uploading_hint__');
+                if (h) h.remove();
+            });
+        };
+        input.click();
+    }
+
+    function handleMonthlyDelete() {
+        var key = getMonthKey();
+        var code = prompt('🔐 أدخل كود التصديق السري:');
+        if (code !== '999') { alert('❌ كود خاطئ'); return; }
+        if (!confirm('🗑️ حذف صورة ' + monthLabel(key) + '؟')) return;
+        var photos = loadJSON(MONTHLY_KEY, {});
+        delete photos[key];
+        saveJSON(MONTHLY_KEY, photos);
+        renderMonthlySection();
+        pushMonthlyToCloud();
+        playSafe('success');
+    }
+
+    function injectPersonalSection() {
+        var profileView = document.getElementById('view-profile');
+        if (!profileView) return;
+        if (document.getElementById('__personal_photo_box__')) return;
+        var milId = profileView.querySelector('.military-id');
+        if (!milId) return;
+
+        var photoBox = document.createElement('div');
+        photoBox.id = '__personal_photo_box__';
+        photoBox.style.cssText =
+            'display:flex;justify-content:center;align-items:center;' +
+            'flex-direction:column;gap:12px;padding:15px;' +
+            'margin-bottom:15px;border-bottom:2px dashed var(--gold);';
+
+        var title = document.createElement('h3');
+        title.style.cssText = 'color:var(--gold);margin:0;font-size:15px;';
+        title.textContent = '📸 الصورة الشخصية';
+
+        var frame = document.createElement('div');
+        frame.id = '__personal_photo_frame__';
+        frame.style.cssText =
+            'width:160px;height:160px;border-radius:50%;overflow:hidden;' +
+            'border:4px solid var(--gold);box-shadow:0 0 25px rgba(212,175,55,0.5),' +
+            'inset 0 0 15px rgba(0,0,0,0.5);background:#000;' +
+            'display:flex;align-items:center;justify-content:center;' +
+            'position:relative;cursor:pointer;';
+
+        var btnRow = document.createElement('div');
+        btnRow.id = '__personal_photo_btns__';
+        btnRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;justify-content:center;';
+
+        photoBox.appendChild(title);
+        photoBox.appendChild(frame);
+        photoBox.appendChild(btnRow);
+        milId.insertBefore(photoBox, milId.firstChild);
+        renderPersonalSection();
+    }
+
+    function renderPersonalSection() {
+        var frame = document.getElementById('__personal_photo_frame__');
+        var btnsRow = document.getElementById('__personal_photo_btns__');
+        if (!frame || !btnsRow) return;
+        var idx = (typeof currentIdx !== 'undefined') ? currentIdx : -1;
+        if (idx === -1) return;
+        var people = getPeopleList();
+        var person = people[idx];
+        if (!person) return;
+
+        var avatars = loadJSON(AVATAR_KEY, {});
+        var src = avatars[person.name] || '';
+
+        var isLeader = false;
+        try {
+            if (typeof supremeCommand !== 'undefined' && Array.isArray(supremeCommand)) {
+                isLeader = supremeCommand.some(function(c) { return c.name === person.name; });
+            }
+        } catch(e) {}
+        if (!src) src = getDefaultAvatar(person.name, isLeader);
+
+        frame.innerHTML = '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;display:block;" alt="">';
+
+        frame.onclick = function() {
+            if (src.indexOf('data:image/svg') === 0) return;
+            window.__openImageFullscreen__(src, person.name + ' — ' + person.rank);
+        };
+
+        var btnsHtml = '';
+        if (isAdmin()) {
+            btnsHtml += '<button type="button" id="__upload_avatar_btn__" ' +
+                        'style="padding:8px 14px;background:linear-gradient(135deg,#00ff88,#00aa55);' +
+                        'color:#000;border:none;border-radius:6px;font-size:12px;font-weight:bold;' +
+                        'cursor:pointer;font-family:inherit;">' +
+                        '📤 ' + (avatars[person.name] ? 'تغيير' : 'رفع صورة') + '</button>';
+            if (avatars[person.name]) {
+                btnsHtml += '<button type="button" id="__delete_avatar_btn__" ' +
+                            'style="padding:8px 14px;background:linear-gradient(135deg,#dc3545,#8b0000);' +
+                            'color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:bold;' +
+                            'cursor:pointer;font-family:inherit;">🗑️ حذف</button>';
+            }
+        } else {
+            btnsHtml = '<div style="color:#888;font-size:11px;text-align:center;">🔒 رفع الصورة متاح للقيادة فقط</div>';
+        }
+        btnsRow.innerHTML = btnsHtml;
+
+        var upBtn = document.getElementById('__upload_avatar_btn__');
+        if (upBtn) upBtn.onclick = function() { handleAvatarUpload(person.name); };
+        var delBtn = document.getElementById('__delete_avatar_btn__');
+        if (delBtn) delBtn.onclick = function() { handleAvatarDelete(person.name); };
+    }
+
+    function handleAvatarUpload(personName) {
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = function(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            if (file.size > 10 * 1024 * 1024) { alert('⚠️ الحد الأقصى 10 ميجا'); return; }
+            compressImage(file, 400, 0.8).then(function(dataUrl) {
+                var avatars = loadJSON(AVATAR_KEY, {});
+                avatars[personName] = dataUrl;
+                saveJSON(AVATAR_KEY, avatars);
+                renderPersonalSection();
+                pushAvatarsToCloud();
+                playSafe('success');
+            }).catch(function(err) { alert('❌ فشل: ' + (err.message || err)); });
+        };
+        input.click();
+    }
+
+    function handleAvatarDelete(personName) {
+        var code = prompt('🔐 أدخل كود التصديق السري:');
+        if (code !== '999') { alert('❌ كود خاطئ'); return; }
+        if (!confirm('🗑️ حذف الصورة الشخصية؟')) return;
+        var avatars = loadJSON(AVATAR_KEY, {});
+        delete avatars[personName];
+        saveJSON(AVATAR_KEY, avatars);
+        renderPersonalSection();
+        pushAvatarsToCloud();
+        playSafe('success');
+    }
+
+    function renderViewerList() {
+        var listDiv = document.getElementById('people-list');
+        if (!listDiv) return;
+
+        var viewerName = getViewerName();
+        var viewerCode = getViewerCode();
+
+        if (!viewerName) {
+            listDiv.innerHTML =
+                '<div style="text-align:center;padding:20px;color:#888;' +
+                'font-style:italic;font-size:13px;">⏳ جاري التحميل...</div>';
+            return;
+        }
+
+        var people = getPeopleList();
+        if (people.length === 0) {
+            listDiv.innerHTML =
+                '<div style="text-align:center;padding:20px;color:#888;' +
+                'font-style:italic;font-size:13px;">📭 لا يوجد مقاتلون</div>';
+            return;
+        }
+
+        var searchBox = document.getElementById('search-box');
+        var sortSelect = document.getElementById('sort-select');
+        if (searchBox) searchBox.style.display = 'none';
+        if (sortSelect) sortSelect.style.display = 'none';
+
+        var avatars = loadJSON(AVATAR_KEY, {});
+        var leaders = {};
+        try {
+            if (typeof supremeCommand !== 'undefined' && Array.isArray(supremeCommand)) {
+                supremeCommand.forEach(function(c) { if (c.name) leaders[c.name] = true; });
+            }
+        } catch(e) {}
+
+        var html = '';
+        html += '<div style="background:rgba(77,166,255,0.1);' +
+                'border:1px dashed #4da6ff;border-radius:8px;padding:10px;' +
+                'margin-bottom:12px;text-align:center;color:#4da6ff;' +
+                'font-size:12px;font-weight:bold;line-height:1.6;">' +
+                '👁️ وضع الزائر — قائمة القوة<br>' +
+                '<span style="color:#888;font-size:11px;font-weight:normal;">' +
+                'يمكنك فتح ملفك الشخصي فقط بالضغط على اسمك</span></div>';
+
+        html += '<div style="text-align:center;color:#D4AF37;font-size:12px;' +
+                'font-weight:bold;margin-bottom:10px;">' +
+                '🪖 إجمالي القوة: ' + people.length + ' مقاتل</div>';
+
+        people.forEach(function(p) {
+            var isMe = (p.name === viewerName);
+            var isLeader = !!leaders[p.name];
+            var src = avatars[p.name] || getDefaultAvatar(p.name, isLeader);
+
+            var borderColor = isMe ? 'var(--gold)' : (isLeader ? '#4da6ff' : '#333');
+            var bg = isMe ?
+                'linear-gradient(135deg,rgba(212,175,55,0.15),rgba(212,175,55,0.03))' :
+                'linear-gradient(135deg,#0a0a0a,#151515)';
+            var opacity = isMe ? '1' : '0.9';
+
+            html += '<div class="card" ' +
+                    'onclick="window.__viewerClickName__(\'' +
+                    esc(p.name).replace(/'/g, "\\'") + '\', this)" ' +
+                    'style="display:flex;align-items:center;gap:10px;' +
+                    'transition:all 0.25s ease;' +
+                    'background:' + bg + ';' +
+                    'border:2px solid ' + borderColor + ';' +
+                    'opacity:' + opacity + ';' +
+                    (isMe ? 'cursor:pointer;' : 'cursor:not-allowed;') + '">';
+
+            html += '<div style="width:50px;height:50px;border-radius:50%;overflow:hidden;' +
+                    'border:2px solid ' + borderColor + ';flex-shrink:0;' +
+                    'box-shadow:0 0 10px rgba(' +
+                    (isMe ? '212,175,55' : '77,166,255') + ',0.3);">';
+            html += '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;" alt="">';
+            html += '</div>';
+
+            html += '<div style="flex:1;text-align:right;min-width:0;">';
+            html += '<div style="color:#fff;font-weight:bold;font-size:14px;' +
+                    'margin-bottom:4px;display:flex;align-items:center;gap:6px;' +
+                    'justify-content:flex-end;flex-wrap:wrap;">';
+
+            if (isMe) {
+                html += '<span style="background:var(--gold);color:#000;' +
+                        'padding:1px 8px;border-radius:10px;font-size:10px;' +
+                        'font-weight:bold;">أنت</span>';
+            }
+            if (isLeader) {
+                html += '<span style="color:#4da6ff;font-size:13px;">👑</span>';
+            }
+            html += '<span style="overflow:hidden;text-overflow:ellipsis;' +
+                    'white-space:nowrap;max-width:100%;">' + esc(p.name) + '</span>';
+            html += '</div>';
+
+            html += '<div style="display:flex;justify-content:flex-end;' +
+                    'align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;">';
+            html += '<span style="color:var(--gold);">' + esc(p.rank) + '</span>';
+
+            if (isMe && viewerCode) {
+                html += '<span style="background:rgba(255,215,0,0.15);' +
+                        'color:#ffd700;padding:2px 8px;border-radius:10px;' +
+                        'font-weight:bold;font-size:10px;' +
+                        'border:1px solid rgba(255,215,0,0.4);' +
+                        'direction:ltr;">#' + esc(viewerCode) + '</span>';
+            }
+
+            html += '</div>';
+            html += '</div>';
+
+            html += isMe ?
+                '<div style="color:var(--gold);font-size:22px;flex-shrink:0;">👁️</div>' :
+                '<div style="color:#333;font-size:18px;flex-shrink:0;">🔒</div>';
+
+            html += '</div>';
+        });
+
+        listDiv.innerHTML = html;
+    }
+
+    window.__viewerClickName__ = function(name, el) {
+        var viewerName = getViewerName();
+        if (name === viewerName) {
+            if (typeof window.openProfile === 'function') window.openProfile(name);
+        } else {
+            if (el) {
+                var oldBorder = el.style.borderColor;
+                el.style.borderColor = '#ff4d4d';
+                el.style.boxShadow = '0 0 20px rgba(255,77,77,0.6)';
+                el.style.transform = 'translateX(-6px)';
+                setTimeout(function() {
+                    el.style.borderColor = oldBorder;
+                    el.style.boxShadow = '';
+                    el.style.transform = '';
+                }, 700);
+            }
+            showToast('🔒 يمكنك فتح ملفك الشخصي فقط');
+        }
+    };
+
+    function showToast(msg) {
+        var old = document.getElementById('__viewer_list_toast__');
+        if (old) old.remove();
+        var t = document.createElement('div');
+        t.id = '__viewer_list_toast__';
+        t.style.cssText =
+            'position:fixed;bottom:130px;left:50%;transform:translateX(-50%);' +
+            'background:linear-gradient(135deg,#0d1b2a,#1b263b);' +
+            'border:2px solid #4da6ff;border-radius:25px;' +
+            'color:#fff;font-size:13px;font-weight:bold;' +
+            'padding:10px 20px;z-index:9999995;' +
+            'box-shadow:0 4px 20px rgba(77,166,255,0.5);' +
+            'direction:rtl;font-family:inherit;' +
+            'transition:opacity 0.3s;opacity:1;' +
+            'max-width:90%;text-align:center;';
+        t.textContent = msg;
+        document.body.appendChild(t);
+        setTimeout(function() {
+            t.style.opacity = '0';
+            setTimeout(function() { if (t.parentNode) t.remove(); }, 300);
+        }, 2200);
+    }
+
+    function patchOpenProfile() {
+        if (typeof window.openProfile !== 'function') return false;
+        if (window.openProfile._photoGuardV2) return true;
+        var orig = window.openProfile;
+        window.openProfile = function(name) {
+            if (isViewer()) {
+                var me = getViewerName();
+                if (!me || name !== me) {
+                    showToast('🛡️ يمكنك فتح ملفك الشخصي فقط');
+                    return;
+                }
+            }
+            return orig.apply(this, arguments);
+        };
+        window.openProfile._photoGuardV2 = true;
+        return true;
+    }
+
+    function patchRenderPeopleList() {
+        if (typeof window.renderPeopleList !== 'function') return false;
+        if (window.renderPeopleList._photoGuardV2) return true;
+        var orig = window.renderPeopleList;
+        window.renderPeopleList = function() {
+            if (isViewer()) { renderViewerList(); return; }
+            return orig.apply(this, arguments);
+        };
+        window.renderPeopleList._photoGuardV2 = true;
+        return true;
+    }
+
+    function pushMonthlyToCloud() {
+        if (!window.__FIREBASE_DB || !isAdmin()) return;
+        try {
+            window.__FIREBASE_DB.collection(APP_COL).doc('monthlyPhotos').set({
+                photos: loadJSON(MONTHLY_KEY, {}),
+                lastUpdated: new Date().toISOString(),
+                updatedBy: (window.OWNER_NAME || 'admin')
+            }).catch(function(e) { console.warn('Monthly push failed', e); });
+        } catch(e) {}
+    }
+    function pushAvatarsToCloud() {
+        if (!window.__FIREBASE_DB || !isAdmin()) return;
+        try {
+            window.__FIREBASE_DB.collection(APP_COL).doc('avatars').set({
+                avatars: loadJSON(AVATAR_KEY, {}),
+                lastUpdated: new Date().toISOString(),
+                updatedBy: (window.OWNER_NAME || 'admin')
+            }).catch(function(e) { console.warn('Avatars push failed', e); });
+        } catch(e) {}
+    }
+    function pullPhotosFromCloud() {
+        if (!window.__FIREBASE_DB) return Promise.resolve();
+        return Promise.all([
+            window.__FIREBASE_DB.collection(APP_COL).doc('monthlyPhotos').get(),
+            window.__FIREBASE_DB.collection(APP_COL).doc('avatars').get()
+        ]).then(function(res) {
+            if (res[0].exists) {
+                var d = res[0].data();
+                if (d.photos && typeof d.photos === 'object') {
+                    var neu = JSON.stringify(d.photos);
+                    if (localStorage.getItem(MONTHLY_KEY) !== neu) {
+                        localStorage.setItem(MONTHLY_KEY, neu);
+                        renderMonthlySection();
+                    }
+                }
+            }
+            if (res[1].exists) {
+                var a = res[1].data();
+                if (a.avatars && typeof a.avatars === 'object') {
+                    var neu2 = JSON.stringify(a.avatars);
+                    if (localStorage.getItem(AVATAR_KEY) !== neu2) {
+                        localStorage.setItem(AVATAR_KEY, neu2);
+                        var idx = (typeof currentIdx !== 'undefined') ? currentIdx : -1;
+                        if (idx !== -1) renderPersonalSection();
+                        if (isViewer() && document.getElementById('people-list')) {
+                            renderViewerList();
+                        }
+                    }
+                }
+            }
+        }).catch(function(e) { console.warn('Photo pull failed', e); });
+    }
+    function startPhotoListeners() {
+        if (!window.__FIREBASE_DB) return;
+        try {
+            window.__FIREBASE_DB.collection(APP_COL).doc('monthlyPhotos')
+                .onSnapshot(function(doc) {
+                    if (!doc.exists) return;
+                    var d = doc.data();
+                    if (!d.photos || typeof d.photos !== 'object') return;
+                    var neu = JSON.stringify(d.photos);
+                    if (localStorage.getItem(MONTHLY_KEY) !== neu) {
+                        localStorage.setItem(MONTHLY_KEY, neu);
+                        renderMonthlySection();
+                    }
+                });
+            window.__FIREBASE_DB.collection(APP_COL).doc('avatars')
+                .onSnapshot(function(doc) {
+                    if (!doc.exists) return;
+                    var d = doc.data();
+                    if (!d.avatars || typeof d.avatars !== 'object') return;
+                    var neu = JSON.stringify(d.avatars);
+                    if (localStorage.getItem(AVATAR_KEY) !== neu) {
+                        localStorage.setItem(AVATAR_KEY, neu);
+                        var idx = (typeof currentIdx !== 'undefined') ? currentIdx : -1;
+                        if (idx !== -1) renderPersonalSection();
+                        if (isViewer() && document.getElementById('people-list')) {
+                            renderViewerList();
+                        }
+                    }
+                });
+        } catch(e) {}
+    }
+
+    var css = document.createElement('style');
+    css.id = '__photo_system_v2_css__';
+    css.textContent =
+        'body.viewer-mode #search-box, body.viewer-mode #sort-select{' +
+            'display:none!important;' +
+        '}';
+    document.head.appendChild(css);
+
+    setInterval(function() {
+        var pv = document.getElementById('view-profile');
+        if (pv && !pv.classList.contains('hidden')) {
+            injectPersonalSection();
+            renderPersonalSection();
+        }
+    }, 800);
+
+    setInterval(function() {
+        var rv = document.getElementById('view-rest');
+        if (rv && !rv.classList.contains('hidden')) {
+            injectMonthlySection();
+        }
+    }, 900);
+
+    setInterval(function() {
+        var card = document.getElementById('__monthly_photo_section__');
+        if (!card) return;
+        var key = getMonthKey();
+        if (card.dataset.monthKey !== key) {
+            card.dataset.monthKey = key;
+            renderMonthlySection();
+        }
+    }, 700);
+
+    setInterval(function() {
+        if (!isViewer()) return;
+        var hv = document.getElementById('view-home');
+        if (hv && !hv.classList.contains('hidden')) {
+            var listDiv = document.getElementById('people-list');
+            if (listDiv) {
+                var count = listDiv.querySelectorAll('.card').length;
+                var peopleCount = getPeopleList().length;
+                if (count !== peopleCount) renderViewerList();
+            }
+        }
+    }, 1500);
+
+    var tries = 0;
+    var iv = setInterval(function() {
+        tries++;
+        patchRenderPeopleList();
+        patchOpenProfile();
+        if (tries > 60) clearInterval(iv);
+    }, 300);
+
+    function waitForFirebase(cb) {
+        if (window.__FIREBASE_DB && window.__FIREBASE_READY) cb();
+        else setTimeout(function() { waitForFirebase(cb); }, 500);
+    }
+    waitForFirebase(function() {
+        pullPhotosFromCloud().then(function() {
+            startPhotoListeners();
+        });
+    });
+
+    console.log('🖼️ Reynard Photo System Full v2 loaded');
+})();
+</script>
 </body>
 </html>
 ```
