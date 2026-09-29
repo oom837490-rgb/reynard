@@ -21088,6 +21088,306 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('🖼️ Reynard Photo System — Full loaded');
 })();
 </script>
+<!-- ============================================ -->
+<!-- 🔍 Reynard Image Zoom v2 — Clean & Elegant     -->
+<!-- إيماءات فقط — بدون أزرار تخفي الصورة           -->
+<!-- ============================================ -->
+<script id="__image_zoom_v2_clean__">
+(function() {
+    'use strict';
+
+    if (window.__imageZoomV2Clean__) return;
+    window.__imageZoomV2Clean__ = true;
+
+    window.__openImageFullscreen__ = function(src, caption) {
+        var existing = document.getElementById('__img_fullscreen__');
+        if (existing) existing.remove();
+
+        // ============ الحاوية الرئيسية ============
+        var modal = document.createElement('div');
+        modal.id = '__img_fullscreen__';
+        modal.style.cssText =
+            'position:fixed;top:0;left:0;width:100%;height:100%;' +
+            'background:#000;z-index:9999999;' +
+            'display:flex;align-items:center;justify-content:center;' +
+            'overflow:hidden;direction:ltr;touch-action:none;' +
+            'user-select:none;-webkit-user-select:none;' +
+            'cursor:zoom-in;';
+
+        // ============ الصورة ============
+        var img = document.createElement('img');
+        img.src = src;
+        img.draggable = false;
+        img.style.cssText =
+            'max-width:100vw;max-height:100vh;object-fit:contain;' +
+            'user-select:none;-webkit-user-drag:none;pointer-events:none;' +
+            'will-change:transform;transform-origin:center center;' +
+            'transition:none;';
+
+        // ============ زر الإغلاق الصغير ============
+        var closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.innerHTML = '✖';
+        closeBtn.style.cssText =
+            'position:absolute;top:16px;right:16px;' +
+            'width:42px;height:42px;padding:0;' +
+            'background:rgba(0,0,0,0.55);' +
+            'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);' +
+            'color:#fff;border:1.5px solid rgba(255,255,255,0.35);' +
+            'border-radius:50%;font-size:18px;font-weight:bold;' +
+            'cursor:pointer;font-family:inherit;' +
+            'display:flex;align-items:center;justify-content:center;' +
+            'z-index:10;transition:all 0.25s ease;' +
+            'line-height:1;box-shadow:0 4px 20px rgba(0,0,0,0.6);';
+
+        closeBtn.onmouseenter = function() {
+            closeBtn.style.background = 'rgba(220,53,69,0.9)';
+            closeBtn.style.transform = 'scale(1.1)';
+        };
+        closeBtn.onmouseleave = function() {
+            closeBtn.style.background = 'rgba(0,0,0,0.55)';
+            closeBtn.style.transform = 'scale(1)';
+        };
+
+        modal.appendChild(img);
+        modal.appendChild(closeBtn);
+
+        // ============ الكابشن (اختياري، مخفي بعد 3 ثواني) ============
+        if (caption) {
+            var cap = document.createElement('div');
+            cap.style.cssText =
+                'position:absolute;bottom:24px;left:50%;' +
+                'transform:translateX(-50%);' +
+                'padding:8px 18px;' +
+                'background:rgba(0,0,0,0.7);' +
+                'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);' +
+                'color:#D4AF37;font-size:13px;font-weight:bold;' +
+                'border-radius:20px;pointer-events:none;' +
+                'direction:rtl;font-family:inherit;' +
+                'border:1px solid rgba(212,175,55,0.4);' +
+                'max-width:85%;text-align:center;' +
+                'transition:opacity 0.6s ease;opacity:1;' +
+                'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+            cap.textContent = caption;
+            modal.appendChild(cap);
+            setTimeout(function() { cap.style.opacity = '0'; }, 3500);
+        }
+
+        document.body.appendChild(modal);
+
+        // ============================================
+        // STATE
+        // ============================================
+        var state = {
+            scale: 1,
+            tx: 0,
+            ty: 0,
+            min: 1,
+            max: 8
+        };
+
+        function apply() {
+            img.style.transform =
+                'translate(' + state.tx + 'px, ' + state.ty + 'px) ' +
+                'scale(' + state.scale + ')';
+        }
+
+        function clamp() {
+            if (state.scale <= 1.005) {
+                state.tx = 0; state.ty = 0;
+                return;
+            }
+            var w = img.offsetWidth;
+            var h = img.offsetHeight;
+            var vw = window.innerWidth;
+            var vh = window.innerHeight;
+            var maxX = Math.max(0, (w * state.scale - vw) / 2);
+            var maxY = Math.max(0, (h * state.scale - vh) / 2);
+            state.tx = Math.max(-maxX, Math.min(maxX, state.tx));
+            state.ty = Math.max(-maxY, Math.min(maxY, state.ty));
+        }
+
+        function setScale(newScale, cx, cy) {
+            newScale = Math.max(state.min, Math.min(state.max, newScale));
+            if (Math.abs(newScale - state.scale) < 0.001) return;
+
+            if (cx !== undefined && cy !== undefined) {
+                var vw = window.innerWidth;
+                var vh = window.innerHeight;
+                var ox = cx - vw / 2;
+                var oy = cy - vh / 2;
+                var ratio = newScale / state.scale;
+                state.tx = ox + (state.tx - ox) * ratio;
+                state.ty = oy + (state.ty - oy) * ratio;
+            }
+
+            state.scale = newScale;
+            if (state.scale <= 1.005) {
+                state.scale = 1;
+                state.tx = 0; state.ty = 0;
+            }
+            clamp();
+            apply();
+        }
+
+        function reset() {
+            state.scale = 1;
+            state.tx = 0;
+            state.ty = 0;
+            apply();
+        }
+
+        // ============================================
+        // TOUCH: Pinch + Pan + Double-tap
+        // ============================================
+        var t = {
+            mode: null,
+            startDist: 0,
+            startScale: 1,
+            startX: 0, startY: 0,
+            startTX: 0, startTY: 0,
+            lastTap: 0, lastTapX: 0, lastTapY: 0
+        };
+
+        function dist(a, b) {
+            var dx = a.clientX - b.clientX;
+            var dy = a.clientY - b.clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        modal.addEventListener('touchstart', function(e) {
+            if (e.target === closeBtn) return;
+
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                t.mode = 'pinch';
+                t.startDist = dist(e.touches[0], e.touches[1]);
+                t.startScale = state.scale;
+                t.startTX = state.tx;
+                t.startTY = state.ty;
+            } else if (e.touches.length === 1) {
+                var now = Date.now();
+                var p = e.touches[0];
+
+                // Double-tap detection
+                if (now - t.lastTap < 300 &&
+                    Math.abs(p.clientX - t.lastTapX) < 50 &&
+                    Math.abs(p.clientY - t.lastTapY) < 50) {
+                    e.preventDefault();
+                    if (state.scale > 1.2) {
+                        reset();
+                    } else {
+                        setScale(3, p.clientX, p.clientY);
+                    }
+                    t.lastTap = 0;
+                    return;
+                }
+                t.lastTap = now;
+                t.lastTapX = p.clientX;
+                t.lastTapY = p.clientY;
+
+                t.mode = 'pan';
+                t.startX = p.clientX;
+                t.startY = p.clientY;
+                t.startTX = state.tx;
+                t.startTY = state.ty;
+            }
+        }, { passive: false });
+
+        modal.addEventListener('touchmove', function(e) {
+            if (e.target === closeBtn) return;
+
+            if (t.mode === 'pinch' && e.touches.length === 2) {
+                e.preventDefault();
+                var d = dist(e.touches[0], e.touches[1]);
+                var cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                var cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                var newScale = t.startScale * (d / t.startDist);
+                setScale(newScale, cx, cy);
+            } else if (t.mode === 'pan' && e.touches.length === 1 && state.scale > 1) {
+                e.preventDefault();
+                var p = e.touches[0];
+                state.tx = t.startTX + (p.clientX - t.startX);
+                state.ty = t.startTY + (p.clientY - t.startY);
+                clamp();
+                apply();
+            }
+        }, { passive: false });
+
+        modal.addEventListener('touchend', function(e) {
+            if (e.touches.length === 0) t.mode = null;
+        });
+
+        // ============================================
+        // MOUSE: Wheel zoom + Drag pan (desktop)
+        // ============================================
+        modal.addEventListener('wheel', function(e) {
+            if (e.target === closeBtn) return;
+            e.preventDefault();
+            var factor = e.deltaY > 0 ? (1 / 1.15) : 1.15;
+            setScale(state.scale * factor, e.clientX, e.clientY);
+        }, { passive: false });
+
+        var m = { down: false, sx: 0, sy: 0, stx: 0, sty: 0 };
+
+        modal.addEventListener('mousedown', function(e) {
+            if (e.target === closeBtn) return;
+            if (state.scale <= 1) return;
+            e.preventDefault();
+            m.down = true;
+            m.sx = e.clientX; m.sy = e.clientY;
+            m.stx = state.tx; m.sty = state.ty;
+            modal.style.cursor = 'grabbing';
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!m.down) return;
+            state.tx = m.stx + (e.clientX - m.sx);
+            state.ty = m.sty + (e.clientY - m.sy);
+            clamp();
+            apply();
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (m.down) {
+                m.down = false;
+                modal.style.cursor = state.scale > 1 ? 'grab' : 'zoom-in';
+            }
+        });
+
+        // Double-click zoom (desktop)
+        modal.addEventListener('dblclick', function(e) {
+            if (e.target === closeBtn) return;
+            e.preventDefault();
+            if (state.scale > 1.2) reset();
+            else setScale(3, e.clientX, e.clientY);
+        });
+
+        // ============================================
+        // CLOSE
+        // ============================================
+        function close() {
+            modal.remove();
+            document.removeEventListener('keydown', keyHandler);
+        }
+
+        closeBtn.onclick = function(e) {
+            e.stopPropagation();
+            close();
+        };
+
+        // Click on black background (فقط لو مش مكبّر)
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal && state.scale <= 1.05) close();
+        });
+
+        function keyHandler(e) { if (e.key === 'Escape') close(); }
+        document.addEventListener('keydown', keyHandler);
+    };
+
+    console.log('🔍 Image Zoom v2 (Clean) loaded');
+})();
+</script>
 </body>
 </html>
 ```
