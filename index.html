@@ -22292,6 +22292,112 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('🖼️ Reynard Photo System Full v2 loaded');
 })();
 </script>
+<!-- ============================================ -->
+<!-- 🔒 Viewer More Restrictions v1                 -->
+<!-- يمنع الزائر من: سجل التعديلات + الإحصائيات    -->
+<!-- + أزرار التصدير (واتساب + PDF + إكسيل)       -->
+<!-- ============================================ -->
+<script id="__viewer_more_restrictions_v1__">
+(function() {
+    'use strict';
+
+    if (window.__viewerMoreRestrictions__) return;
+    window.__viewerMoreRestrictions__ = true;
+
+    function isViewer() {
+        return window.__USER_ROLE__ === 'viewer';
+    }
+
+    // ============================================
+    // 1) CSS — إخفاء الأزرار عن الزوار
+    // ============================================
+    var css = document.createElement('style');
+    css.id = '__viewer_more_css__';
+    css.textContent =
+        // إخفاء سجل التعديلات + الإحصائيات
+        'body.viewer-mode .btn-view-log,' +
+        'body.viewer-mode .btn-view-stats {' +
+            'display: none !important;' +
+        '}' +
+
+        // إخفاء أزرار التصدير (واتساب + PDF + إكسيل)
+        'body.viewer-mode [onclick*="exportWhatsApp"],' +
+        'body.viewer-mode [onclick*="exportOfficialPDF"],' +
+        'body.viewer-mode [onclick*="exportDailyExcel"] {' +
+            'display: none !important;' +
+        '}';
+    document.head.appendChild(css);
+
+    // ============================================
+    // 2) حماية الدوال (طبقة ثانية — لو حد حاول ينفذها يدوياً)
+    // ============================================
+    function guard(name) {
+        if (typeof window[name] !== 'function') return false;
+        if (window[name]._viewerGuarded) return true;
+
+        var orig = window[name];
+        window[name] = function() {
+            if (isViewer()) {
+                showToast('👁️ وضع الزائر: هذه الميزة متاحة للقيادة فقط');
+                return;
+            }
+            return orig.apply(this, arguments);
+        };
+        window[name]._viewerGuarded = true;
+        return true;
+    }
+
+    function installGuards() {
+        guard('exportWhatsApp');
+        guard('exportOfficialPDF');
+        guard('exportDailyExcel');
+        guard('showRestLog');
+        guard('showRestStats');
+        guard('deleteRestLog');
+        guard('backupData');   // حماية إضافية
+    }
+
+    // ============================================
+    // 3) توست للتنبيه
+    // ============================================
+    function showToast(msg) {
+        var old = document.getElementById('__viewer_more_toast__');
+        if (old) old.remove();
+        var t = document.createElement('div');
+        t.id = '__viewer_more_toast__';
+        t.style.cssText =
+            'position:fixed;bottom:130px;left:50%;transform:translateX(-50%);' +
+            'background:linear-gradient(135deg,#0d1b2a,#1b263b);' +
+            'border:2px solid #4da6ff;border-radius:25px;' +
+            'color:#fff;font-size:13px;font-weight:bold;' +
+            'padding:10px 20px;z-index:9999995;' +
+            'box-shadow:0 4px 20px rgba(77,166,255,0.5);' +
+            'direction:rtl;font-family:inherit;' +
+            'transition:opacity 0.3s;opacity:1;' +
+            'max-width:90%;text-align:center;';
+        t.textContent = msg;
+        document.body.appendChild(t);
+        setTimeout(function() {
+            t.style.opacity = '0';
+            setTimeout(function() { if (t.parentNode) t.remove(); }, 300);
+        }, 2500);
+    }
+
+    // ============================================
+    // 4) التشغيل الدوري (لأن الدوال قد تتأخر في التحميل)
+    // ============================================
+    var tries = 0;
+    var iv = setInterval(function() {
+        tries++;
+        installGuards();
+        if (tries > 60) clearInterval(iv);
+    }, 300);
+
+    installGuards();
+
+    console.log('🔒 Viewer More Restrictions v1 loaded');
+})();
+</script>
 </body>
 </html>
 ```
