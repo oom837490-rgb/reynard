@@ -22398,6 +22398,82 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('🔒 Viewer More Restrictions v1 loaded');
 })();
 </script>
+<!-- ============================================ -->
+<!-- 🛠️ إصلاح استرجاع الشفرة                       -->
+<!-- يحفظ الحالات والأماكن والقيادة والعطلات        -->
+<!-- ============================================ -->
+<script id="__restore_data_fix_v1__">
+(function() {
+    'use strict';
+
+    if (window.__restoreFixInstalled__) return;
+    window.__restoreFixInstalled__ = true;
+
+    function applyFix() {
+        var fileInput = document.getElementById('import-file');
+        if (!fileInput) return false;
+        if (fileInput._fixInstalled) return true;
+
+        fileInput.addEventListener('change', function() {
+            // استنى لحد ما الملف يخلص قراءة (الاسترجاع async)
+            setTimeout(function() {
+                try {
+                    var saved = [];
+
+                    if (typeof statuses !== 'undefined' && Array.isArray(statuses) && statuses.length > 0) {
+                        localStorage.setItem('ST_FINAL_V23', JSON.stringify(statuses));
+                        saved.push('الحالات(' + statuses.length + ')');
+                    }
+                    if (typeof locations !== 'undefined' && Array.isArray(locations) && locations.length > 0) {
+                        localStorage.setItem('LOC_FINAL_V23', JSON.stringify(locations));
+                        saved.push('الأماكن(' + locations.length + ')');
+                    }
+                    if (typeof supremeCommand !== 'undefined' && Array.isArray(supremeCommand)) {
+                        localStorage.setItem('MIL_SUPREME_V1', JSON.stringify(supremeCommand));
+                        saved.push('القيادة(' + supremeCommand.length + ')');
+                    }
+                    if (typeof shiftDailyNotes !== 'undefined' && shiftDailyNotes && typeof shiftDailyNotes === 'object') {
+                        localStorage.setItem('MIL_SHIFT_NOTES', JSON.stringify(shiftDailyNotes));
+                        saved.push('دفتر الأحوال');
+                    }
+                    if (typeof publicHolidays !== 'undefined' && publicHolidays && typeof publicHolidays === 'object') {
+                        localStorage.setItem('MIL_HOLIDAYS_V1', JSON.stringify(publicHolidays));
+                        saved.push('العطلات(' + Object.keys(publicHolidays).length + ')');
+                    }
+
+                    console.log('✅ Restore Fix applied:', saved.join(' | '));
+
+                    // إعادة رسم كل الواجهات
+                    setTimeout(function() {
+                        try {
+                            if (typeof milRenderAll === 'function') milRenderAll();
+                            if (typeof renderSupremeCommand === 'function') renderSupremeCommand();
+                            if (typeof renderSupremeCommandSettings === 'function') renderSupremeCommandSettings();
+                            if (typeof populateWeatherSelects === 'function') populateWeatherSelects();
+                            if (typeof renderSettingsHolidays === 'function') renderSettingsHolidays();
+                        } catch(e) { console.warn('Refresh error:', e); }
+                    }, 150);
+
+                } catch(e) {
+                    console.warn('Restore Fix error:', e);
+                }
+            }, 2000);
+        });
+
+        fileInput._fixInstalled = true;
+        return true;
+    }
+
+    // انتظر ظهور الـ input
+    var tries = 0;
+    var iv = setInterval(function() {
+        tries++;
+        if (applyFix() || tries > 40) clearInterval(iv);
+    }, 250);
+
+    console.log('🛠️ Restore Data Fix v1 loaded');
+})();
+</script>
 </body>
 </html>
 ```
