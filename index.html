@@ -22474,6 +22474,175 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('🛠️ Restore Data Fix v1 loaded');
 })();
 </script>
+<!-- ============================================ -->
+<!-- 🛡️ Viewer Violations Hider v1                  -->
+<!-- يخفي التجاوزات/التأخيرات عن الزوار            -->
+<!-- ويعرض بطاقات التحذير بالغياب فقط              -->
+<!-- ============================================ -->
+<script id="__viewer_violations_hider_v1__">
+(function() {
+    'use strict';
+
+    if (window.__viewerViolationsHider__) return;
+    window.__viewerViolationsHider__ = true;
+
+    var HIDDEN_TYPES = ['تجاوز', 'تأخير'];
+
+    function isViewer() {
+        return window.__USER_ROLE__ === 'viewer';
+    }
+
+    // ============================================
+    // 1) الفلترة الأساسية: اعتراض getDailyEvents
+    //    تفلتر التجاوزات/التأخيرات من المصدر نفسه
+    //    فتشمل: دفتر الأحوال + أحداث الشهر + تحليلات
+    //    + سجل المخالفات + البحث + القوائم المنسدلة
+    // ============================================
+    function wrapGetDailyEvents() {
+        if (typeof window.getDailyEvents !== 'function') return false;
+        if (window.getDailyEvents._viewerFiltered) return true;
+
+        var orig = window.getDailyEvents;
+        window.getDailyEvents = function(dateKey) {
+            var events = orig.call(this, dateKey);
+            if (!isViewer()) return events;
+            if (!Array.isArray(events)) return events || [];
+            return events.filter(function(ev) {
+                if (!ev || !ev.type) return true;
+                return HIDDEN_TYPES.indexOf(ev.type) === -1;
+            });
+        };
+        window.getDailyEvents._viewerFiltered = true;
+        return true;
+    }
+
+    // ============================================
+    // 2) نصوص "قرار القيادة" الجديدة للزائر
+    //    (مخصصة للغياب فقط — بدون ذكر تجاوزات)
+    // ============================================
+    var ABSENCE_DECISIONS = [
+        'نرجو الانتباه والالتزام بالحضور المنتظم، وتجنب تكرار الغياب.',
+        'تكرار غيابك يستدعي تدخلاً فورياً.\nفي حالة التكرار سيتم رفع مذكرة بجزاء 3 أيام خصم من الراتب.',
+        'سجل غيابك غير مقبول. في حالة التكرار:\n• الحرمان من جميع الإجازات السنوية\n• رفض طلبات الإجازة المصيف\n• رفع تقرير لمجلس التأديب',
+        'بناءً على تكرار غيابك:\n• الحرمان من مكافأة الميدتيرم\n• رفض أي طلب إجازة لمدة شهرين\n• عدم الموافقة على طلبات المصيف\n• رفع تقرير للإدارة العليا',
+        'بناءً على غيابك المتكرر:\n• الحرمان من مكافأة نهاية العام\n• رفض جميع طلبات الإجازات\n• عدم الترشيح لأي ترقية أو وسام\n• رفع تقرير شامل للإدارة العليا\n\n⚠️ تحذير نهائي: في حالة التكرار سيُحال ملفك للشئون القانونية.'
+    ];
+
+    // ============================================
+    // 3) تعديل بطاقات التحذير للزوار
+    //    - العنوان: "أعلى 5 غيابات"
+    //    - التسمية: "إجمالي الغياب"
+    //    - إخفاء أزرار واتساب (إجراء حساس)
+    //    - قرار قيادة مخصص للغياب
+    // ============================================
+    function patchWarningCards() {
+        if (!isViewer()) return;
+
+        var container = document.getElementById('warning-cards-container');
+        if (!container) return;
+
+        // (أ) العنوان الرئيسي ورأس القسم المطوي
+        container.querySelectorAll('.warning-cards-title').forEach(function(el) {
+            var txt = el.textContent;
+            if (txt.indexOf('مخالفات') !== -1) {
+                el.textContent = txt.replace('مخالفات', 'غيابات');
+            }
+        });
+        container.querySelectorAll('.collapsible-header span:first-child').forEach(function(el) {
+            var txt = el.textContent;
+            if (txt.indexOf('مخالفات') !== -1) {
+                el.textContent = txt.replace('مخالفات', 'غيابات');
+            }
+        });
+
+        // (ب) تعديل كل بطاقة
+        container.querySelectorAll('.warning-card-item').forEach(function(card, idx) {
+
+            // 1. تسمية "إجمالي المخالفات" → "إجمالي الغياب"
+            card.querySelectorAll('.warning-card-info-label').forEach(function(lbl) {
+                if (lbl.textContent.indexOf('إجمالي المخالفات') !== -1) {
+                    lbl.textContent = '📊 إجمالي الغياب:';
+                }
+            });
+
+            // 2. عنوان "سجل المخالفات" → "سجل الغياب"
+            var violationsTitle = card.querySelector('.warning-card-violations-title');
+            if (violationsTitle && violationsTitle.textContent.indexOf('المخالفات') !== -1) {
+                violationsTitle.textContent = '📋 سجل الغياب:';
+            }
+
+            // 3. قرار القيادة
+            var decBox = card.querySelector('.warning-card-decision');
+            if (decBox) {
+                var decDivs = decBox.querySelectorAll('div');
+                if (decDivs.length >= 2 && decDivs[1].dataset.viewerPatched !== '1') {
+                    var lvl = Math.min(idx, ABSENCE_DECISIONS.length - 1);
+                    decDivs[1].textContent = ABSENCE_DECISIONS[lvl];
+                    decDivs[1].style.whiteSpace = 'pre-line';
+                    decDivs[1].dataset.viewerPatched = '1';
+                }
+            }
+
+            // 4. إخفاء زر واتساب (بطاقة إنذار = إجراء قيادي)
+            card.querySelectorAll('button').forEach(function(b) {
+                if (b.textContent.indexOf('واتساب') !== -1) {
+                    b.style.display = 'none';
+                }
+            });
+        });
+    }
+
+    // ============================================
+    // 4) CSS إضافي — تنظيفات بصرية للزائر
+    // ============================================
+    var css = document.createElement('style');
+    css.id = '__viewer_vh_css__';
+    css.textContent =
+        // إخفاء زر الحذف من جدول دفتر الأحوال للزائر
+        'body.viewer-mode .events-table button[onclick*="deleteDailyNote"]{' +
+            'display:none!important;' +
+        '}';
+    document.head.appendChild(css);
+
+    // ============================================
+    // 5) التشغيل
+    // ============================================
+    wrapGetDailyEvents();
+
+    // محاولات أولية سريعة (لو الدالة تأخرت في التحميل)
+    var tries = 0;
+    var iv = setInterval(function() {
+        tries++;
+        wrapGetDailyEvents();
+        if (tries > 60) clearInterval(iv);
+    }, 250);
+
+    // مراقبة دورية لتحديث بطاقات التحذير بعد كل رندر
+    setInterval(function() {
+        if (isViewer()) patchWarningCards();
+    }, 700);
+
+    // MutationObserver على حاوية البطاقات — استجابة فورية
+    var containerObs = null;
+    function attachWarningObserver() {
+        if (containerObs) return;
+        var container = document.getElementById('warning-cards-container');
+        if (!container) return;
+        try {
+            containerObs = new MutationObserver(function() {
+                if (isViewer()) patchWarningCards();
+            });
+            containerObs.observe(container, { childList: true, subtree: true });
+        } catch(e) {}
+    }
+
+    setInterval(function() {
+        if (isViewer() && !containerObs) attachWarningObserver();
+    }, 1000);
+
+    console.log('🛡️ Viewer Violations Hider v1 loaded');
+})();
+</script>
 </body>
 </html>
 ```
