@@ -22643,6 +22643,89 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('🛡️ Viewer Violations Hider v1 loaded');
 })();
 </script>
+<!-- ============================================ -->
+<!-- 🎯 إصلاح تكرار الحدث في صفحة التحليلات        -->
+<!-- يخفي التكرار من "أحداث الشهر" فقط              -->
+<!-- التمام + دفتر الوردية + الملف الشخصي ما يتأثروش -->
+<!-- ============================================ -->
+<script id="__fix_monthly_events_duplicate_v1__">
+(function() {
+    'use strict';
+
+    if (window.__fixMonthlyEventsDupV1__) return;
+    window.__fixMonthlyEventsDupV1__ = true;
+
+    var filterActive = false;
+    var origGetDailyEvents = null;
+
+    // ─────────────────────────────────────────
+    // 1) التفاف حول getDailyEvents
+    //    — يفلتر فقط عندما نكون داخل صفحة التحليلات
+    // ─────────────────────────────────────────
+    function wrapGetDailyEvents() {
+        if (typeof window.getDailyEvents !== 'function') return false;
+        if (window.getDailyEvents._dupFixWrapped) return true;
+
+        origGetDailyEvents = window.getDailyEvents;
+
+        window.getDailyEvents = function(dateKey) {
+            var events = origGetDailyEvents.call(this, dateKey);
+
+            // فلتر فقط أثناء رسم "أحداث الشهر"
+            if (filterActive && Array.isArray(events)) {
+                return events.filter(function(ev) {
+                    if (!ev || !ev.type) return true;
+                    return ev.type !== 'حدث عام' && ev.type !== 'رحلة';
+                });
+            }
+            return events;
+        };
+
+        window.getDailyEvents._dupFixWrapped = true;
+        return true;
+    }
+
+    // ─────────────────────────────────────────
+    // 2) التفاف حول renderAnalyticsGeneralEvents
+    //    — يشغّل الفلتر قبل الرسم ويطفيه بعده
+    // ─────────────────────────────────────────
+    function wrapRenderAnalyticsGeneralEvents() {
+        if (typeof window.renderAnalyticsGeneralEvents !== 'function') return false;
+        if (window.renderAnalyticsGeneralEvents._dupFixWrapped) return true;
+
+        var orig = window.renderAnalyticsGeneralEvents;
+
+        window.renderAnalyticsGeneralEvents = function(y, m, daysInMonth) {
+            filterActive = true;
+            try {
+                return orig.apply(this, arguments);
+            } finally {
+                filterActive = false;
+            }
+        };
+
+        window.renderAnalyticsGeneralEvents._dupFixWrapped = true;
+        return true;
+    }
+
+    // ─────────────────────────────────────────
+    // 3) محاولات متكررة للتثبيت (الدوال قد تتأخر)
+    // ─────────────────────────────────────────
+    var tries = 0;
+    var iv = setInterval(function() {
+        tries++;
+        wrapGetDailyEvents();
+        wrapRenderAnalyticsGeneralEvents();
+        if (tries > 60) clearInterval(iv);
+    }, 250);
+
+    // محاولة فورية
+    wrapGetDailyEvents();
+    wrapRenderAnalyticsGeneralEvents();
+
+    console.log('🎯 Fix Monthly Events Duplicate v1 loaded');
+})();
+</script>
 </body>
 </html>
 ```
