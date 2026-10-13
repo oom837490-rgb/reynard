@@ -22646,6 +22646,153 @@ console.log('🌙 Night Leave Calendar v3 loaded');
 <style>
 .nl-grid-header { display: none !important; }
 </style>
+<!-- ============================================ -->
+<!-- 🛡️ Race Guard v1                              -->
+<!-- يحمي تعديلاتك من المحو أثناء المزامنة         -->
+<!-- لا يعدّل أي منطق — إضافة فقط                   -->
+<!-- ============================================ -->
+<script id="__race_guard_v1__">
+(function() {
+    'use strict';
+
+    if (window.__raceGuardV1__) return;
+    window.__raceGuardV1__ = true;
+
+    var PROTECTED = ['MIL_FINAL_V15', 'MIL_SHIFT_NOTES'];
+    var BLOCK_WINDOW = 10000; // 10 ثوانٍ
+
+    var lastUserEdit = 0;
+    var userSaveInProgress = false;
+
+    // -----------------------------------------------------------
+    // 1) تتبّع نقرات المستخدم (كطبقة أمان أولى)
+    // -----------------------------------------------------------
+    document.addEventListener('click', function(e) {
+        var t = e.target;
+        if (!t || !t.closest) return;
+        if (t.closest('button') || t.closest('[onclick]')) {
+            lastUserEdit = Date.now();
+        }
+    }, true);
+
+    // -----------------------------------------------------------
+    // 2) ربط دوال المستخدم (تُعتبر كتابة يدوية)
+    // -----------------------------------------------------------
+    var USER_FUNCS = [
+        'saveAll', 'confirmModal', 'deletePersonSecured',
+        'clearCommandSecured', 'addPerson', 'saveCustomRadio',
+        'saveCustomHoliday', 'deleteCustomHoliday', 'restoreData',
+        'editTrip', 'deleteTrip', 'editGeneralEvent', 'deleteGeneralEvent',
+        'saveBulletinPost', 'addComment'
+    ];
+
+    function hookUserFuncs() {
+        for (var i = 0; i < USER_FUNCS.length; i++) {
+            var name = USER_FUNCS[i];
+            if (typeof window[name] !== 'function') continue;
+            if (window[name]._rgHooked) continue;
+            (function(fnName) {
+                var orig = window[fnName];
+                window[fnName] = function() {
+                    lastUserEdit = Date.now();
+                    userSaveInProgress = true;
+                    try {
+                        return orig.apply(this, arguments);
+                    } finally {
+                        userSaveInProgress = false;
+                    }
+                };
+                window[fnName]._rgHooked = true;
+            })(name);
+        }
+    }
+
+    // -----------------------------------------------------------
+    // 3) عدّ الإدخالات الفعلية (للمقارنة)
+    // -----------------------------------------------------------
+    function countEntries(str) {
+        if (!str) return 0;
+        try {
+            var d = JSON.parse(str);
+            if (Array.isArray(d)) {
+                var t = 0;
+                for (var i = 0; i < d.length; i++) {
+                    t += Object.keys(d[i].attendance || {}).length;
+                }
+                return t;
+            }
+            if (typeof d === 'object' && d !== null) {
+                return Object.keys(d).length;
+            }
+        } catch(e) {}
+        return 0;
+    }
+
+    // -----------------------------------------------------------
+    // 4) حماية localStorage.setItem
+    // -----------------------------------------------------------
+    var wrapperInstalled = false;
+    function installWrapper() {
+        if (wrapperInstalled) return true;
+        if (!localStorage.setItem._reynardHooked) return false;
+        if (localStorage.setItem._rgWrapped) {
+            wrapperInstalled = true;
+            return true;
+        }
+
+        var theirHook = localStorage.setItem;
+        var nativeGet = localStorage.getItem.bind(localStorage);
+
+        localStorage.setItem = function(key, value) {
+            // كتابة من المستخدم؟ → اسمح دائمًا
+            if (userSaveInProgress) {
+                return theirHook.call(this, key, value);
+            }
+
+            // فحص مفاتيح الحماية
+            if (PROTECTED.indexOf(key) !== -1) {
+                var elapsed = Date.now() - lastUserEdit;
+                if (elapsed >= 0 && elapsed < BLOCK_WINDOW) {
+                    var curStr = nativeGet(key);
+                    if (curStr && curStr !== value) {
+                        var curCount = countEntries(curStr);
+                        var incCount = countEntries(value);
+                        if (incCount < curCount) {
+                            console.log('🛡️ RG blocked stale write: ' + key +
+                                        ' (-' + (curCount - incCount) + ' entries)');
+                            return;
+                        }
+                    }
+                }
+            }
+
+            return theirHook.call(this, key, value);
+        };
+        localStorage.setItem._rgWrapped = true;
+        wrapperInstalled = true;
+        return true;
+    }
+
+    // -----------------------------------------------------------
+    // 5) التشغيل والمحاولات المتكررة
+    // -----------------------------------------------------------
+    hookUserFuncs();
+    installWrapper();
+
+    var tries = 0;
+    var iv = setInterval(function() {
+        tries++;
+        hookUserFuncs();
+        installWrapper();
+        if (wrapperInstalled && tries > 20) {
+            clearInterval(iv);
+        }
+        if (tries > 150) clearInterval(iv);
+    }, 200);
+
+    console.log('🛡️ Race Guard v1 loaded — تعديلاتك محمية');
+})();
+</script>
 </body>
 </html>
 ```
