@@ -23162,6 +23162,47 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('🟠 Casual Leave System v1 loaded');
 })();
 </script>
+<!-- ============================================ -->
+<!-- 🩹 Hotfix: منع تكرار سطر العارضة              -->
+<!-- ============================================ -->
+<script id="__casual_leave_hotfix_v1__">
+(function() {
+    'use strict';
+
+    if (window.__casualLeaveHotfixV1__) return;
+    window.__casualLeaveHotfixV1__ = true;
+
+    function applyHotfix() {
+        if (typeof window.renderPersonalStats !== 'function') return false;
+        if (window.renderPersonalStats._casualHotfix) return true;
+
+        var prev = window.renderPersonalStats;
+        window.renderPersonalStats = function() {
+            var r = prev.apply(this, arguments);
+
+            // احذف أي سطر مكرر للعارضة
+            try {
+                document.querySelectorAll('.__casual_stat_line__').forEach(function(el) {
+                    el.remove();
+                });
+            } catch(e) {}
+
+            return r;
+        };
+        window.renderPersonalStats._casualHotfix = true;
+        return true;
+    }
+
+    applyHotfix();
+    var tries = 0;
+    var iv = setInterval(function() {
+        tries++;
+        if (applyHotfix() || tries > 40) clearInterval(iv);
+    }, 200);
+
+    console.log('🩹 Casual Leave Hotfix v1 loaded');
+})();
+</script>
 </body>
 </html>
 ```
