@@ -23203,6 +23203,195 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('🩹 Casual Leave Hotfix v1 loaded');
 })();
 </script>
+<!-- ============================================ -->
+<!-- 🟠 Casual Leave Fix v3 — Final                -->
+<!-- يحل التكرار + يخفي الأماكن + واتساب           -->
+<!-- ============================================ -->
+<script id="__casual_leave_fix_v3__">
+(function() {
+    'use strict';
+
+    if (window.__casualLeaveFixV3__) return;
+    window.__casualLeaveFixV3__ = true;
+
+    // ============================================
+    // Helper
+    // ============================================
+    function isCasualStatus(s) {
+        if (!s) return false;
+        if (s.indexOf('نصف') !== -1) return false;
+        return s.indexOf('🟠') !== -1 || s.indexOf('عارضة') !== -1;
+    }
+
+    // ============================================
+    // 1) منع السطر المكرر — مراقبة فورية
+    // ============================================
+    function startDuplicateKiller() {
+        // حذف فوري لأي سطر مكرر
+        function killDuplicate() {
+            try {
+                document.querySelectorAll('.__casual_stat_line__').forEach(function(el) {
+                    if (el && el.parentNode) el.parentNode.removeChild(el);
+                });
+            } catch(e) {}
+        }
+
+        // مراقبة أي إضافة جديدة
+        var statsBody = document.getElementById('stats-table-body');
+        if (statsBody && !statsBody._dupObserver) {
+            try {
+                var obs = new MutationObserver(function() {
+                    killDuplicate();
+                });
+                obs.observe(statsBody, { childList: true });
+                statsBody._dupObserver = obs;
+            } catch(e) {}
+        }
+
+        // فحص دوري احتياطي كل 300 مللي
+        if (!window._dupKillerInterval) {
+            window._dupKillerInterval = setInterval(killDuplicate, 300);
+        }
+
+        killDuplicate();
+    }
+
+    // ============================================
+    // 2) إخفاء الأماكن عند اختيار عارضة
+    // ============================================
+    function patchRenderModalOpts() {
+        if (typeof window.renderModalOpts !== 'function') return false;
+        if (window.renderModalOpts._casualV3) return true;
+
+        var orig = window.renderModalOpts;
+        window.renderModalOpts = function() {
+            var r = orig.apply(this, arguments);
+
+            try {
+                if (typeof tempS !== 'undefined' && isCasualStatus(tempS)) {
+                    var locWrapper = document.getElementById('loc-wrapper');
+                    if (locWrapper) locWrapper.style.display = 'none';
+
+                    var selContainer = document.getElementById('selected-locations-container');
+                    if (selContainer) selContainer.style.display = 'none';
+
+                    var addBtn = document.getElementById('add-location-btn');
+                    if (addBtn) addBtn.style.display = 'none';
+
+                    if (typeof tempLocations !== 'undefined') {
+                        tempLocations = [];
+                    }
+                    if (typeof selectedLocation !== 'undefined') {
+                        selectedLocation = null;
+                    }
+                }
+            } catch(e) {}
+
+            return r;
+        };
+        window.renderModalOpts._casualV3 = true;
+        return true;
+    }
+
+    // ============================================
+    // 3) واتساب — سطر العارضات
+    // ============================================
+    function patchWhatsApp() {
+        if (typeof window.exportWhatsApp !== 'function') return false;
+        if (window.exportWhatsApp._casualV3) return true;
+
+        var orig = window.exportWhatsApp;
+        window.exportWhatsApp = function() {
+            var capturedUrl = null;
+            var _origOpen = window.open;
+
+            window.open = function(url, t) {
+                capturedUrl = url;
+                return {
+                    document: { write: function() {}, close: function() {} },
+                    print: function() {}
+                };
+            };
+
+            try { orig.apply(this, arguments); }
+            catch(e) { console.warn('WhatsApp orig error', e); }
+            finally { window.open = _origOpen; }
+
+            if (!capturedUrl || capturedUrl.indexOf('wa.me') === -1) {
+                if (capturedUrl) _origOpen.call(window, capturedUrl, '_blank');
+                return;
+            }
+
+            try {
+                var sepIdx = capturedUrl.indexOf('text=');
+                var prefix = capturedUrl.substring(0, sepIdx + 5);
+                var decoded = decodeURIComponent(capturedUrl.substring(sepIdx + 5));
+
+                var sy = document.getElementById('sum-year').value;
+                var sm = String(document.getElementById('sum-month').value).padStart(2, '0');
+                var sd = String(document.getElementById('sum-day').value).padStart(2, '0');
+                var d = sy + '-' + sm + '-' + sd;
+
+                var casualPeople = [];
+                if (typeof people !== 'undefined' && Array.isArray(people)) {
+                    people.forEach(function(p) {
+                        var ent = p.attendance && p.attendance[d];
+                        if (ent && isCasualStatus(ent.s)) casualPeople.push(p.name);
+                    });
+                }
+
+                if (casualPeople.length > 0) {
+                    var casualBlock =
+                        '\n*🟠 العارضات (ظرف طارئ) [' + casualPeople.length + ']:*\n' +
+                        casualPeople.map(function(n) { return '• ' + n; }).join('\n') + '\n';
+
+                    var sigMarker = '*توقيع مدير الوردية';
+                    if (decoded.indexOf(sigMarker) !== -1) {
+                        decoded = decoded.replace(sigMarker, casualBlock + '\n' + sigMarker);
+                    } else {
+                        decoded += casualBlock;
+                    }
+                }
+
+                var newUrl = prefix + encodeURIComponent(decoded);
+                _origOpen.call(window, newUrl, '_blank');
+            } catch(e) {
+                console.warn('WhatsApp casual v3 failed', e);
+                if (capturedUrl) _origOpen.call(window, capturedUrl, '_blank');
+            }
+        };
+        window.exportWhatsApp._casualV3 = true;
+        return true;
+    }
+
+    // ============================================
+    // Bootstrap
+    // ============================================
+    function bootstrap() {
+        startDuplicateKiller();
+
+        var tries = 0;
+        var iv = setInterval(function() {
+            tries++;
+            startDuplicateKiller();
+            var ok1 = patchRenderModalOpts();
+            var ok2 = patchWhatsApp();
+            if ((ok1 && ok2) || tries > 60) {
+                clearInterval(iv);
+                console.log('✅ Casual Leave Fix v3 ready');
+            }
+        }, 250);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootstrap);
+    } else {
+        bootstrap();
+    }
+
+    console.log('🟠 Casual Leave Fix v3 loaded');
+})();
+</script>
 </body>
 </html>
 ```
