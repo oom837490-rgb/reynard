@@ -22793,6 +22793,375 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('🛡️ Race Guard v1 loaded — تعديلاتك محمية');
 })();
 </script>
+<!-- ============================================ -->
+<!-- 🟠 Casual Leave System v1                    -->
+<!-- نظام العارضة — إضافات فقط بلا تعديل          -->
+<!-- ============================================ -->
+<script id="__casual_leave_v1__">
+(function() {
+    'use strict';
+
+    if (window.__casualLeaveV1__) return;
+    window.__casualLeaveV1__ = true;
+
+    // ============================================
+    // Helper: كشف حالة العارضة
+    // ============================================
+    function isCasualStatus(s) {
+        if (!s) return false;
+        if (s.indexOf('نصف') !== -1) return false;
+        return s.indexOf('🟠') !== -1 || s.indexOf('عارضة') !== -1;
+    }
+    window.__isCasualStatus__ = isCasualStatus;
+
+    // ============================================
+    // Patch 1: getRem() — خصم العارضة من الرصيد
+    // ============================================
+    function patchGetRem() {
+        if (typeof window.getRem !== 'function') return false;
+        if (window.getRem._casualPatched) return true;
+
+        var orig = window.getRem;
+        window.getRem = function(p) {
+            var base = orig(p);
+            var casuals = 0;
+            try {
+                Object.keys(p.attendance || {}).forEach(function(d) {
+                    var s = (p.attendance[d] && p.attendance[d].s) || '';
+                    if (s.indexOf('رمضان') !== -1) return;
+                    if (isCasualStatus(s)) casuals++;
+                });
+            } catch(e) {}
+            return base - casuals;
+        };
+        window.getRem._casualPatched = true;
+        return true;
+    }
+
+    // ============================================
+    // Patch 2: calculateTotalPointsForDay() — إرجاع -5 للعارضة
+    // ============================================
+    function patchCalculatePoints() {
+        if (typeof window.calculateTotalPointsForDay !== 'function') return false;
+        if (window.calculateTotalPointsForDay._casualPatched) return true;
+
+        var orig = window.calculateTotalPointsForDay;
+        window.calculateTotalPointsForDay = function(person, dateKey) {
+            try {
+                var entry = person.attendance[dateKey];
+                if (entry && entry.s && isCasualStatus(entry.s)) {
+                    return {
+                        total: -5,
+                        details: [{ label: '🟠 عارضة (ظرف طارئ)', points: -5 }]
+                    };
+                }
+            } catch(e) {}
+            return orig(person, dateKey);
+        };
+        window.calculateTotalPointsForDay._casualPatched = true;
+        return true;
+    }
+
+    // ============================================
+    // Patch 3: renderPersonalStats() — سطر العارضة + تعديل المؤشر
+    // ============================================
+    function patchPersonalStats() {
+        if (typeof window.renderPersonalStats !== 'function') return false;
+        if (window.renderPersonalStats._casualPatched) return true;
+
+        var orig = window.renderPersonalStats;
+        window.renderPersonalStats = function() {
+            var r = orig.apply(this, arguments);
+
+            try {
+                if (typeof currentIdx === 'undefined' || currentIdx < 0) return r;
+                if (typeof people === 'undefined' || !people[currentIdx]) return r;
+                var p = people[currentIdx];
+
+                var rangeEl = document.getElementById('stats-range');
+                var monthEl = document.getElementById('sel-month');
+                var yearEl = document.getElementById('sel-year');
+                if (!rangeEl || !monthEl || !yearEl) return r;
+
+                var rng = rangeEl.value;
+                var tM = parseInt(monthEl.value) + 1;
+                var tY = parseInt(yearEl.value);
+
+                var casualCount = 0;
+                Object.keys(p.attendance || {}).forEach(function(d) {
+                    var parts = d.split('-');
+                    var yNum = Number(parts[0]), mNum = Number(parts[1]);
+                    var inRange =
+                        (rng === 'year' && yNum === tY) ||
+                        (rng === 'month' && yNum === tY && mNum === tM) ||
+                        rng === 'all';
+                    if (!inRange) return;
+                    var ent = p.attendance[d];
+                    if (ent && isCasualStatus(ent.s)) casualCount++;
+                });
+
+                if (casualCount === 0) return r;
+
+                // 1. خصم 5 × العدد من مؤشر الكفاءة المعروض
+                var summary = document.getElementById('profile-points-summary');
+                if (summary) {
+                    var bEl = summary.querySelector('b');
+                    if (bEl) {
+                        var cur = parseInt(bEl.textContent, 10) || 0;
+                        var newVal = cur - (casualCount * 5);
+                        bEl.textContent = newVal;
+                        bEl.style.color = newVal >= 0 ? '#0f0' : '#ff4d4d';
+                    }
+                }
+
+                // 2. سطر منفصل في إحصاء الحالة الفردية
+                var statsBody = document.getElementById('stats-table-body');
+                if (statsBody && !statsBody.querySelector('.__casual_stat_line__')) {
+                    var line = document.createElement('div');
+                    line.className = 'stat-line __casual_stat_line__';
+                    line.innerHTML =
+                        '<span>عارضة (ظرف طارئ) 🟠</span> ' +
+                        '<b>' + casualCount + ' يوم</b>';
+                    statsBody.appendChild(line);
+                }
+            } catch(e) {
+                console.warn('Personal stats casual patch failed', e);
+            }
+
+            return r;
+        };
+        window.renderPersonalStats._casualPatched = true;
+        return true;
+    }
+
+    // ============================================
+    // Patch 4: renderWarningCards() — وزن 0.5 + إعادة الترتيب
+    // ============================================
+    function patchWarningCards() {
+        if (typeof window.renderWarningCards !== 'function') return false;
+        if (window.renderWarningCards._casualPatched) return true;
+
+        window.__origRenderWarningCards = window.renderWarningCards;
+
+        window.renderWarningCards = function(y, m, daysInMonth) {
+            var r = window.__origRenderWarningCards.apply(this, arguments);
+
+            try {
+                if (typeof WARNING_LEVELS === 'undefined') return r;
+
+                var container = document.getElementById('warning-cards-container');
+                if (!container) return r;
+                var content = container.querySelector('#warning-cards-content');
+                if (!content) return r;
+
+                var cards = Array.prototype.slice.call(
+                    content.querySelectorAll('.warning-card-item')
+                );
+                if (cards.length === 0) return r;
+
+                var monthStr = String(m).padStart(2, '0');
+
+                var analyzed = cards.map(function(card) {
+                    var nameEl = card.querySelector('.warning-card-info-value');
+                    var personName = nameEl ? nameEl.textContent.trim() : '';
+                    var p = people.find(function(x) { return x.name === personName; });
+
+                    var baseTotal = 0;
+                    card.querySelectorAll('.warning-card-info-label').forEach(function(lbl) {
+                        if (lbl.textContent.indexOf('إجمالي المخالفات') !== -1) {
+                            var v = lbl.nextElementSibling;
+                            if (v) baseTotal = parseFloat(v.textContent) || 0;
+                        }
+                    });
+
+                    var casualCount = 0;
+                    if (p) {
+                        for (var d = 1; d <= daysInMonth; d++) {
+                            var dStr = y + '-' + monthStr + '-' + String(d).padStart(2, '0');
+                            var entry = p.attendance[dStr];
+                            if (entry && isCasualStatus(entry.s)) casualCount++;
+                        }
+                    }
+
+                    var weighted = baseTotal + (casualCount * 0.5);
+
+                    return {
+                        card: card,
+                        name: personName,
+                        p: p,
+                        baseTotal: baseTotal,
+                        casualCount: casualCount,
+                        weighted: weighted
+                    };
+                });
+
+                // إعادة الترتيب حسب الوزن الجديد
+                analyzed.sort(function(a, b) { return b.weighted - a.weighted; });
+
+                // إعادة إدراج البطاقات بالترتيب الجديد
+                analyzed.forEach(function(i) { content.appendChild(i.card); });
+
+                // تحديث كل بطاقة حسب موقعها الجديد
+                analyzed.forEach(function(item, idx) {
+                    var card = item.card;
+                    var lvlIdx = Math.min(idx, WARNING_LEVELS.length - 1);
+                    var newLevel = WARNING_LEVELS[lvlIdx];
+
+                    WARNING_LEVELS.forEach(function(lvl) {
+                        card.classList.remove(lvl.class);
+                    });
+                    card.classList.add(newLevel.class);
+
+                    var titleEl = card.querySelector('.warning-card-title');
+                    if (titleEl) titleEl.textContent = newLevel.title;
+
+                    var centerEl = card.querySelector('.warning-card-level');
+                    if (centerEl) centerEl.textContent = 'المركز #' + (idx + 1);
+
+                    var statusEl = card.querySelector('.warning-card-status');
+                    if (statusEl) statusEl.textContent = newLevel.status;
+
+                    var decBox = card.querySelector('.warning-card-decision');
+                    if (decBox && item.name) {
+                        var divs = decBox.querySelectorAll('div');
+                        if (divs.length >= 2) {
+                            divs[1].textContent = newLevel.decision(item.name);
+                            divs[1].style.whiteSpace = 'pre-line';
+                        }
+                    }
+
+                    // تحديث الإجمالي وإضافة سطر العارضة
+                    if (item.casualCount > 0) {
+                        card.querySelectorAll('.warning-card-info-label').forEach(function(lbl) {
+                            if (lbl.textContent.indexOf('إجمالي المخالفات') !== -1) {
+                                var v = lbl.nextElementSibling;
+                                if (v) {
+                                    var val = item.weighted;
+                                    v.textContent = Number.isInteger(val) ? val : val.toFixed(1);
+                                }
+                            }
+                        });
+
+                        var vBox = card.querySelector('.warning-card-violations');
+                        if (vBox && !vBox.querySelector('.__casual_line__')) {
+                            var line = document.createElement('div');
+                            line.className = 'warning-card-violation-item __casual_line__';
+                            line.innerHTML =
+                                '🟠 <b>العارضة:</b> ' + item.casualCount +
+                                ' يوم <span style="opacity:0.7;font-size:10px;">(وزن ×0.5)</span>';
+                            vBox.appendChild(line);
+                        }
+                    }
+                });
+
+            } catch(e) {
+                console.warn('Warning cards casual patch failed', e);
+            }
+
+            return r;
+        };
+        window.renderWarningCards._casualPatched = true;
+        return true;
+    }
+
+    // ============================================
+    // Patch 5: exportWhatsApp() — سطر العارضات
+    // ============================================
+    function patchWhatsApp() {
+        if (typeof window.exportWhatsApp !== 'function') return false;
+        if (window.exportWhatsApp._casualPatched) return true;
+
+        var orig = window.exportWhatsApp;
+        window.exportWhatsApp = function() {
+            var capturedUrl = null;
+            var _origOpen = window.open;
+            window.open = function(url, t) {
+                capturedUrl = url;
+                return { document: { write: function() {}, close: function() {} }, print: function() {} };
+            };
+
+            try {
+                orig.apply(this, arguments);
+            } catch(e) {
+                console.warn('WhatsApp orig error', e);
+            } finally {
+                window.open = _origOpen;
+            }
+
+            if (!capturedUrl || capturedUrl.indexOf('wa.me') === -1) {
+                if (capturedUrl) _origOpen.call(window, capturedUrl, '_blank');
+                return;
+            }
+
+            try {
+                var sepIdx = capturedUrl.indexOf('text=');
+                var prefix = capturedUrl.substring(0, sepIdx + 5);
+                var decoded = decodeURIComponent(capturedUrl.substring(sepIdx + 5));
+
+                var sy = document.getElementById('sum-year').value;
+                var sm = String(document.getElementById('sum-month').value).padStart(2, '0');
+                var sd = String(document.getElementById('sum-day').value).padStart(2, '0');
+                var d = sy + '-' + sm + '-' + sd;
+
+                var casualPeople = [];
+                people.forEach(function(p) {
+                    var ent = p.attendance[d];
+                    if (ent && isCasualStatus(ent.s)) casualPeople.push(p.name);
+                });
+
+                if (casualPeople.length > 0) {
+                    var casualBlock =
+                        '\n*🟠 العارضات (ظرف طارئ) [' + casualPeople.length + ']:*\n' +
+                        casualPeople.map(function(n) { return '• ' + n; }).join('\n') +
+                        '\n';
+
+                    var sigMarker = '*توقيع مدير الوردية';
+                    if (decoded.indexOf(sigMarker) !== -1) {
+                        decoded = decoded.replace(sigMarker, casualBlock + '\n' + sigMarker);
+                    } else {
+                        decoded += casualBlock;
+                    }
+                }
+
+                var newUrl = prefix + encodeURIComponent(decoded);
+                _origOpen.call(window, newUrl, '_blank');
+            } catch(e) {
+                console.warn('WhatsApp casual patch failed', e);
+                if (capturedUrl) _origOpen.call(window, capturedUrl, '_blank');
+            }
+        };
+        window.exportWhatsApp._casualPatched = true;
+        return true;
+    }
+
+    // ============================================
+    // Bootstrap — إعادة المحاولة حتى اكتمال كل الطبقات
+    // ============================================
+    function bootstrap() {
+        var tries = 0;
+        var iv = setInterval(function() {
+            tries++;
+            var ok1 = patchGetRem();
+            var ok2 = patchCalculatePoints();
+            var ok3 = patchPersonalStats();
+            var ok4 = patchWarningCards();
+            var ok5 = patchWhatsApp();
+            if ((ok1 && ok2 && ok3 && ok4 && ok5) || tries > 60) {
+                clearInterval(iv);
+                console.log('✅ Casual Leave v1 — كل الطبقات جاهزة');
+            }
+        }, 200);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootstrap);
+    } else {
+        bootstrap();
+    }
+
+    console.log('🟠 Casual Leave System v1 loaded');
+})();
+</script>
 </body>
 </html>
 ```
