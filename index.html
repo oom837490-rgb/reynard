@@ -23392,6 +23392,240 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('🟠 Casual Leave Fix v3 loaded');
 })();
 </script>
+<script id="__holidays_strictly_by_year_v2__">
+(function() {
+    'use strict';
+
+    // 1) إضافة قائمة اختيار السنة (بدون خيار "كل السنين")
+    function injectYearDropdown() {
+        var monthSelect = document.getElementById('settings-hol-month');
+        if (!monthSelect || document.getElementById('settings-hol-year')) return;
+        
+        var yearSelect = document.createElement('select');
+        yearSelect.id = 'settings-hol-year';
+        yearSelect.style.cssText = 'flex:1; font-size:13px; padding:10px; border-radius:5px; background:#000; color:#fff; border:1px solid var(--gold);';
+        
+        var currentYear = new Date().getFullYear();
+        for (var y = currentYear + 2; y >= 2020; y--) {
+            yearSelect.innerHTML += '<option value="' + y + '">📅 سنة ' + y + '</option>';
+        }
+        
+        // ضعها في نفس الصف بتاع الشهر واليوم
+        monthSelect.parentNode.appendChild(yearSelect);
+    }
+
+    // 2) تعديل دالة الحفظ: نجبر التاريخ يكون (سنة-شهر-يوم)
+    function patchSaveHoliday() {
+        if (typeof window.saveCustomHoliday !== 'function') return;
+        if (window.saveCustomHoliday._strictYearPatched) return;
+
+        window.saveCustomHoliday = function() {
+            let selectVal = document.getElementById('settings-hol-name').value;
+            let customVal = document.getElementById('settings-hol-custom').value.trim();
+            let colorVal = document.getElementById('settings-hol-color').value;
+            let finalName = customVal !== "" ? customVal : selectVal;
+            let month = document.getElementById('settings-hol-month').value;
+            let day = document.getElementById('settings-hol-day').value;
+            let yearVal = document.getElementById('settings-hol-year') ? document.getElementById('settings-hol-year').value : new Date().getFullYear();
+
+            if (!finalName) { if(typeof playSound === 'function') playSound('error'); return alert("❌ يرجى اختيار العطلة."); }
+            
+            // المفتاح الجديد بيبقى فيه السنة إجبارياً: YYYY-MM-DD
+            let newKey = `${yearVal}-${month}-${day}`;
+            
+            if (typeof publicHolidays === 'undefined') return;
+
+            publicHolidays[newKey] = { name: finalName, color: colorVal };
+            localStorage.setItem('MIL_HOLIDAYS_V1', JSON.stringify(publicHolidays));
+            
+            if(typeof playSound === 'function') playSound('success');
+            document.getElementById('settings-hol-custom').value = "";
+            if (typeof renderSettingsHolidays === 'function') renderSettingsHolidays();
+            if (typeof updateDailySummary === 'function') updateDailySummary();
+            if (!document.getElementById('view-profile').classList.contains('hidden')) {
+                if (typeof renderCalendar === 'function') renderCalendar();
+            }
+        };
+        window.saveCustomHoliday._strictYearPatched = true;
+    }
+
+    // 3) تعديل التقويم عشان يقرا السنة
+    function patchRenderCalendar() {
+        if (typeof window.renderCalendar !== 'function') return;
+        if (window.renderCalendar._strictYearPatched) return;
+
+        var originalRender = window.renderCalendar;
+        window.renderCalendar = function() {
+            originalRender.apply(this, arguments);
+            
+            let y = parseInt(document.getElementById('sel-year').value);
+            let m = parseInt(document.getElementById('sel-month').value);
+            let days = new Date(y, m + 1, 0).getDate();
+            let box = document.getElementById('calendar-box');
+            if (!box) return;
+            
+            let cells = box.querySelectorAll('.day-cell');
+            cells.forEach(function(cell, idx) {
+                let dayNum = idx + 1;
+                if (dayNum > days) return;
+                
+                let monthDayStr = `${String(m+1).padStart(2,'0')}-${String(dayNum).padStart(2,'0')}`;
+                let fullDateStr = `${y}-${monthDayStr}`; // YYYY-MM-DD
+                
+                // بيدور على العطلة بالسنة والشهر واليوم
+                let hol = publicHolidays[fullDateStr];
+                
+                if (hol) {
+                    let hColor = (typeof hol === 'object' && hol.color) ? hol.color : '#0f0';
+                    let holName = (typeof hol === 'object') ? hol.name : hol;
+                    cell.style.borderColor = hColor;
+                    cell.style.background = hColor + '22';
+                    
+                    let locSpan = cell.querySelector('.day-loc');
+                    if (locSpan && (!locSpan.textContent || locSpan.textContent.trim() === '' || locSpan.textContent.includes(holName))) {
+                        locSpan.style.color = hColor;
+                        locSpan.textContent = holName;
+                    }
+                }
+            });
+        };
+        window.renderCalendar._strictYearPatched = true;
+    }
+
+    // 4) تعديل عرض العطلات في الصفحة الرئيسية
+    function patchRenderHolidaysHome() {
+        if (typeof window.renderHolidaysHome !== 'function') return;
+        if (window.renderHolidaysHome._strictYearPatched) return;
+
+        window.renderHolidaysHome = function() {
+            let year = parseInt(document.getElementById('sum-year').value);
+            let month = parseInt(document.getElementById('sum-month').value);
+            let monthStr = String(month).padStart(2, '0');
+            let div = document.getElementById('home-holidays');
+            let found = [];
+            
+            for (let key in publicHolidays) {
+                let parts = key.split('-');
+                // دلوقتي إحنا بنتعامل بس مع اللي فيه سنة (3 أجزاء)
+                if (parts.length === 3) {
+                    let holYear = parseInt(parts[0]);
+                    let holMonth = parts[1];
+                    let holDay = parts[2];
+                    
+                    if (holMonth === monthStr && holYear === year) {
+                        let day = parseInt(holDay);
+                        let dDate = new Date(year, month - 1, day);
+                        let dayName = (typeof daysArabic !== 'undefined') ? daysArabic[dDate.getDay()] : '';
+                        let hol = publicHolidays[key];
+                        let name = typeof hol === 'string' ? hol : hol.name;
+                        let color = (typeof hol === 'object' && hol.color) ? hol.color : 'var(--gold)';
+                        found.push(`<b style="color:${color}">${dayName} ${day}</b> : ${name}`);
+                    }
+                }
+            }
+            
+            if (found.length > 0) {
+                div.innerHTML = `<div style="background:#111; border:1px dashed var(--gold); padding:8px; border-radius:5px; margin-bottom:15px; font-size:13px; color:#fff;"><b style="color:var(--gold);">🗓️ مناسبات الشهر:</b><br>${found.join('<br>')}</div>`;
+            } else { div.innerHTML = ""; }
+        };
+        window.renderHolidaysHome._strictYearPatched = true;
+    }
+
+    // 5) تعديل قائمة عرض العطلات المحفوظة
+    function patchRenderSettingsHolidays() {
+        if (typeof window.renderSettingsHolidays !== 'function') return;
+        if (window.renderSettingsHolidays._strictYearPatched) return;
+
+        window.renderSettingsHolidays = function() {
+            let listDiv = document.getElementById('settings-holidays-list');
+            let html = "";
+            if (typeof publicHolidays === 'undefined') return;
+            
+            let keys = Object.keys(publicHolidays).sort().reverse(); // الأحدث الأول
+            keys.forEach(k => {
+                let hol = publicHolidays[k];
+                let name = typeof hol === 'string' ? hol : hol.name;
+                let color = (typeof hol === 'object' && hol.color) ? hol.color : '#D4AF37';
+                
+                let displayKey = k;
+                if (k.split('-').length === 2) {
+                     displayKey = `⚠️ قديمة (${k}) - امسحها`;
+                     color = '#ff4d4d';
+                }
+
+                html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; padding:6px 0; gap:5px;">
+                    <span style="color:${color}; font-size:12px;">${displayKey} : <span style="color:#fff">${name}</span></span>
+                    <button onclick="deleteCustomHoliday('${k}')" style="background:#900; color:#fff; border:none; padding:4px 8px; border-radius:3px; cursor:pointer; font-size:11px;">حذف</button>
+                </div>`;
+            });
+            listDiv.innerHTML = html;
+        };
+        window.renderSettingsHolidays._strictYearPatched = true;
+    }
+
+    // تشغيل التعديلات
+    function applyAll() {
+        injectYearDropdown();
+        patchSaveHoliday();
+        patchRenderCalendar();
+        patchRenderHolidaysHome();
+        patchRenderSettingsHolidays();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', applyAll);
+    } else {
+        applyAll();
+    }
+    
+    setInterval(applyAll, 1500);
+    console.log('✅ Holidays Strictly By Year loaded');
+})();
+</script>
+<script id="__auto_migrate_old_holidays_v1__">
+(function() {
+    'use strict';
+    var STORAGE_KEY = 'MIL_HOLIDAYS_V1';
+    
+    function migrate() {
+        try {
+            var raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return;
+            var holidays = JSON.parse(raw);
+            if (!holidays || typeof holidays !== 'object') return;
+
+            var currentYear = new Date().getFullYear();
+            var changed = false;
+
+            for (var key in holidays) {
+                // لو العطلة قديمة (شكلها MM-DD بس)
+                if (key.split('-').length === 2) {
+                    var newKey = currentYear + '-' + key; // نحولها لسنة 2024 (أو السنة الحالية)
+                    if (!holidays[newKey]) {
+                        holidays[newKey] = holidays[key]; // ننقل البيانات
+                    }
+                    delete holidays[key]; // نمسح القديمة
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(holidays));
+                if (typeof publicHolidays !== 'undefined') {
+                    publicHolidays = holidays; // تحديث المتغير العام
+                }
+                if (typeof renderSettingsHolidays === 'function') renderSettingsHolidays();
+                if (typeof updateDailySummary === 'function') updateDailySummary();
+                if (typeof renderCalendar === 'function') renderCalendar();
+                console.log('✅ Old holidays migrated to year ' + currentYear);
+            }
+        } catch(e) { console.warn('Migration failed', e); }
+    }
+
+    // نفذ التحويل بعد ما التطبيق يفتح بـ 3 ثواني
+    setTimeout(migrate, 3000);
+})();
+</script>
 </body>
 </html>
 ```
