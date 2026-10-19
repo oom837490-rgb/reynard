@@ -23499,6 +23499,460 @@ console.log('🌙 Night Leave Calendar v3 loaded');
 
 </body>
 </html>
+<!-- ============================================ -->
+<!-- 📅 Holidays Year Fix v1 — FINAL               -->
+<!-- إصلاح كامل: سنة العطلات + 3 صفحات + جدول الراحات -->
+<!-- ============================================ -->
+<script id="__holidays_year_fix_v1__">
+(function() {
+    'use strict';
+
+    if (window.__holidaysYearFixV1__) return;
+    window.__holidaysYearFixV1__ = true;
+
+    var MIGRATION_KEY = 'MIL_HOLIDAYS_YEAR_FIX_V1_DONE';
+    var MM_DD_REGEX = /^\d{2}-\d{2}$/;
+
+    // ==================================================
+    // PART 1: ترحيل — حذف العطلات القديمة MM-DD
+    // ==================================================
+    function migrateHolidays() {
+        if (localStorage.getItem(MIGRATION_KEY)) return;
+
+        try {
+            var ph = JSON.parse(localStorage.getItem('MIL_HOLIDAYS_V1') || '{}');
+            var removed = 0;
+            Object.keys(ph).forEach(function(k) {
+                if (MM_DD_REGEX.test(k)) {
+                    delete ph[k];
+                    removed++;
+                }
+            });
+
+            if (removed > 0) {
+                localStorage.setItem('MIL_HOLIDAYS_V1', JSON.stringify(ph));
+                console.log('✅ Migrated: removed ' + removed + ' old MM-DD holidays');
+            }
+
+            // مزامنة الـ global
+            try {
+                if (typeof publicHolidays !== 'undefined' && publicHolidays) {
+                    Object.keys(publicHolidays).forEach(function(k) {
+                        if (MM_DD_REGEX.test(k)) delete publicHolidays[k];
+                    });
+                }
+            } catch(e) {}
+
+            localStorage.setItem(MIGRATION_KEY, '1');
+        } catch(e) { console.warn('Migration error', e); }
+    }
+
+    migrateHolidays();
+
+    // ==================================================
+    // PART 2: حقن قائمة السنة في صفحة الإمداد
+    // ==================================================
+    function injectYearSelect() {
+        var monthSel = document.getElementById('settings-hol-month');
+        if (!monthSel) return;
+        if (document.getElementById('settings-hol-year')) return;
+        if (monthSel.options.length === 0) return;
+
+        var mdRow = monthSel.parentNode;
+        if (!mdRow) return;
+
+        var yearSel = document.createElement('select');
+        yearSel.id = 'settings-hol-year';
+        yearSel.style.cssText = 'flex:1; font-size:13px; padding:10px;';
+
+        var currentY = new Date().getFullYear();
+        for (var y = currentY + 2; y >= 2020; y--) {
+            var opt = document.createElement('option');
+            opt.value = String(y);
+            opt.textContent = String(y);
+            yearSel.appendChild(opt);
+        }
+        yearSel.value = String(currentY);
+
+        mdRow.insertBefore(yearSel, mdRow.firstChild);
+    }
+
+    setInterval(injectYearSelect, 500);
+    injectYearSelect();
+
+    // ==================================================
+    // PART 3: Override saveCustomHoliday (YYYY-MM-DD)
+    // ==================================================
+    function patchSaveCustomHoliday() {
+        if (typeof window.saveCustomHoliday !== 'function') return false;
+        if (window.saveCustomHoliday._yearFixV1) return true;
+
+        window.saveCustomHoliday = function() {
+            var selectVal = document.getElementById('settings-hol-name').value;
+            var customVal = document.getElementById('settings-hol-custom').value.trim();
+            var colorVal = document.getElementById('settings-hol-color').value;
+            var finalName = customVal !== "" ? customVal : selectVal;
+
+            var yearEl = document.getElementById('settings-hol-year');
+            var year = yearEl ? yearEl.value : String(new Date().getFullYear());
+            var month = document.getElementById('settings-hol-month').value;
+            var day = document.getElementById('settings-hol-day').value;
+
+            if (!finalName) {
+                if (typeof playSound === 'function') playSound('error');
+                alert("❌ يرجى اختيار العطلة.");
+                return;
+            }
+            if (!year || !month || !day) {
+                if (typeof playSound === 'function') playSound('error');
+                alert("❌ يرجى تحديد السنة والشهر واليوم.");
+                return;
+            }
+
+            var newKey = year + '-' + month + '-' + day;
+
+            try {
+                if (typeof publicHolidays !== 'undefined' && publicHolidays) {
+                    publicHolidays[newKey] = { name: finalName, color: colorVal };
+                    localStorage.setItem('MIL_HOLIDAYS_V1', JSON.stringify(publicHolidays));
+                } else {
+                    var ph = JSON.parse(localStorage.getItem('MIL_HOLIDAYS_V1') || '{}');
+                    ph[newKey] = { name: finalName, color: colorVal };
+                    localStorage.setItem('MIL_HOLIDAYS_V1', JSON.stringify(ph));
+                }
+            } catch(e) { console.warn('Save error', e); }
+
+            if (typeof playSound === 'function') playSound('success');
+            document.getElementById('settings-hol-custom').value = "";
+            if (typeof renderSettingsHolidays === 'function') renderSettingsHolidays();
+            if (typeof updateDailySummary === 'function') updateDailySummary();
+            try {
+                var pv = document.getElementById('view-profile');
+                if (pv && !pv.classList.contains('hidden') && typeof renderCalendar === 'function') {
+                    renderCalendar();
+                }
+            } catch(e) {}
+        };
+        window.saveCustomHoliday._yearFixV1 = true;
+        return true;
+    }
+
+    // ==================================================
+    // PART 4: Override renderSettingsHolidays
+    // ==================================================
+    function patchRenderSettingsHolidays() {
+        if (typeof window.renderSettingsHolidays !== 'function') return false;
+        if (window.renderSettingsHolidays._yearFixV1) return true;
+
+        window.renderSettingsHolidays = function() {
+            var listDiv = document.getElementById('settings-holidays-list');
+            if (!listDiv) return;
+
+            var ph = {};
+            try {
+                if (typeof publicHolidays !== 'undefined' && publicHolidays) ph = publicHolidays;
+                else ph = JSON.parse(localStorage.getItem('MIL_HOLIDAYS_V1') || '{}');
+            } catch(e) { ph = {}; }
+
+            var keys = Object.keys(ph).sort();
+            var html = "";
+            if (keys.length === 0) {
+                html = '<div style="text-align:center;color:#888;padding:15px;font-style:italic;">📭 لا توجد عطلات مسجلة — أضف أول عطلة من الأعلى</div>';
+            } else {
+                keys.forEach(function(k) {
+                    var hol = ph[k];
+                    var name = typeof hol === 'string' ? hol : hol.name;
+                    var color = (typeof hol === 'object' && hol.color) ? hol.color : '#D4AF37';
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #333;padding:6px 4px;font-size:12px;">';
+                    html += '<span style="color:' + color + ';">📅 <b style="color:#fff;">' + k + '</b> : ' + name + '</span>';
+                    html += '<button onclick="deleteCustomHoliday(\'' + k + '\')" style="background:#900;color:#fff;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:11px;">حذف</button>';
+                    html += '</div>';
+                });
+            }
+            listDiv.innerHTML = html;
+        };
+        window.renderSettingsHolidays._yearFixV1 = true;
+        return true;
+    }
+
+    // ==================================================
+    // PART 5: Override renderCalendar (holiday lookup by YYYY-MM-DD)
+    // ==================================================
+    function patchRenderCalendar() {
+        if (typeof window.renderCalendar !== 'function') return false;
+        if (window.renderCalendar._yearFixV1) return true;
+
+        window.renderCalendar = function() {
+            var y = parseInt(document.getElementById('sel-year').value),
+                m = parseInt(document.getElementById('sel-month').value);
+            var box = document.getElementById('calendar-box');
+            if (!box) return;
+            box.innerHTML = "";
+
+            if (typeof renderHolidaysProfile === 'function') renderHolidaysProfile();
+
+            ['سبت', 'أحد', 'إثن', 'ثلا', 'أرب', 'خمي', 'جمع'].forEach(function(d) {
+                box.innerHTML += '<div class="day-name">' + d + '</div>';
+            });
+
+            var offset = (new Date(y, m, 1).getDay() + 1) % 7;
+            for (var i = 0; i < offset; i++) box.innerHTML += '<div></div>';
+
+            var days = new Date(y, m + 1, 0).getDate();
+            var calendarWeather = {};
+            try { calendarWeather = JSON.parse(localStorage.getItem('MIL_CALENDAR_WEATHER') || '{}'); } catch(e) {}
+
+            var person = null;
+            try {
+                if (typeof people !== 'undefined' && typeof currentIdx !== 'undefined' && currentIdx >= 0) {
+                    person = people[currentIdx];
+                }
+            } catch(e) {}
+            if (!person) return;
+
+            var ph = {};
+            try {
+                if (typeof publicHolidays !== 'undefined' && publicHolidays) ph = publicHolidays;
+                else ph = JSON.parse(localStorage.getItem('MIL_HOLIDAYS_V1') || '{}');
+            } catch(e) { ph = {}; }
+
+            for (var d = 1; d <= days; d++) {
+                var monthDayStr = String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+                var dStr = y + '-' + monthDayStr;
+                var entry = (person.attendance && person.attendance[dStr]) || { s: '', l: '', n: '', locations: [] };
+                var locationsList = entry.locations || (entry.l ? [entry.l] : []);
+                var isMulti = locationsList.length > 1;
+
+                // ✅ YYYY-MM-DD lookup
+                var holidayData = ph[dStr] || null;
+                var isHoliday = !!holidayData;
+                var hColor = (holidayData && holidayData.color) ? holidayData.color : "#0f0";
+                var extraStyle = isHoliday ? 'border-color:' + hColor + '; background:' + hColor + '22;' : "";
+                var holName = isHoliday ? (typeof holidayData === 'string' ? holidayData : holidayData.name) : "";
+
+                var statusEmoji = "";
+                if (entry.s) {
+                    var parts = entry.s.split(' ');
+                    statusEmoji = parts[parts.length - 1];
+                } else if (isHoliday) {
+                    var emojis = holName.match(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD00-\uDFFF]/);
+                    statusEmoji = emojis ? emojis.join('') : "💚";
+                }
+                if (isMulti) statusEmoji += ' <span class="multi-loc">+</span>';
+
+                var weatherIcon = calendarWeather[dStr] || "";
+                var shortLoc = locationsList.length > 0 ? locationsList[0].split(' ')[0] : (entry.l ? entry.l.split(' ')[0] : '');
+                var displayLabel = shortLoc;
+                if (isHoliday && !shortLoc) displayLabel = holName;
+                else if (isHoliday && shortLoc) displayLabel = shortLoc + ' - ' + holName;
+                else if (isMulti) displayLabel = shortLoc + ' +' + (locationsList.length - 1);
+                if (weatherIcon) displayLabel = weatherIcon + (displayLabel ? ' ' + displayLabel : '');
+
+                var noteIcon = entry.n ? '<div style="position:absolute; top:2px; right:2px; font-size:8px;">📝</div>' : '';
+
+                box.innerHTML +=
+                    '<div class="day-cell" style="' + extraStyle + '" onclick="openModal(\'' + dStr + '\')">' +
+                        '<span class="day-number">' + d + '</span>' + noteIcon +
+                        '<span class="day-emoji">' + statusEmoji + '</span>' +
+                        '<span class="day-loc" style="font-size:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; text-align:center; padding:0 2px; color:' + (isHoliday ? hColor : 'var(--gold)') + ';">' + displayLabel + '</span>' +
+                    '</div>';
+            }
+
+            try {
+                if (typeof getRem === 'function') {
+                    var remEl = document.getElementById('rem-val');
+                    if (remEl) remEl.innerText = getRem(person);
+                }
+            } catch(e) {}
+            try { if (typeof renderPersonalStats === 'function') renderPersonalStats(); } catch(e) {}
+            try { if (typeof renderProfilePointsDetails === 'function') renderProfilePointsDetails(); } catch(e) {}
+        };
+        window.renderCalendar._yearFixV1 = true;
+        return true;
+    }
+
+    // ==================================================
+    // PART 6: حقن العطلات في جدول الراحات (Post-Render)
+    // ==================================================
+    function injectHolidayInfoIntoNightLeave() {
+        var cells = document.querySelectorAll('#night-leave-section .nl-cell');
+        if (!cells.length) return;
+
+        var yEl = document.getElementById('nl-year');
+        var mEl = document.getElementById('nl-month');
+        if (!yEl || !mEl || !yEl.value || !mEl.value) return;
+
+        var year = parseInt(yEl.value);
+        var month = parseInt(mEl.value);
+
+        var ph = {};
+        try { ph = JSON.parse(localStorage.getItem('MIL_HOLIDAYS_V1') || '{}'); } catch(e) {}
+
+        cells.forEach(function(cell) {
+            var dayAttr = cell.getAttribute('data-day');
+            if (!dayAttr) return;
+            var day = parseInt(dayAttr);
+
+            var dStr = year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+            var hol = ph[dStr];
+            if (!hol) return;
+
+            if (cell.querySelector('.__holiday_badge__')) return;
+
+            var name = typeof hol === 'string' ? hol : hol.name;
+            var color = (typeof hol === 'object' && hol.color) ? hol.color : '#00ff88';
+
+            cell.style.borderColor = color;
+            cell.style.boxShadow = 'inset 0 0 12px ' + color + '30';
+
+            var badge = document.createElement('div');
+            badge.className = '__holiday_badge__';
+            badge.style.cssText =
+                'font-size:10px;text-align:center;padding:3px 5px;margin-bottom:4px;' +
+                'background:rgba(0,0,0,0.4);border-radius:3px;' +
+                'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
+                'flex-shrink:0;font-weight:bold;color:' + color + ';';
+            badge.textContent = name;
+
+            var header = cell.querySelector('.nl-cell-header');
+            if (header && header.nextSibling) {
+                cell.insertBefore(badge, header.nextSibling);
+            } else if (header) {
+                header.parentNode.appendChild(badge);
+            } else {
+                cell.insertBefore(badge, cell.firstChild);
+            }
+        });
+    }
+
+    var nlObserver = null;
+    var nlInjectTimer = null;
+
+    function attachNightLeaveObserver() {
+        var section = document.getElementById('night-leave-section');
+        if (!section) return;
+        if (nlObserver) return;
+
+        nlObserver = new MutationObserver(function() {
+            if (nlInjectTimer) clearTimeout(nlInjectTimer);
+            nlInjectTimer = setTimeout(injectHolidayInfoIntoNightLeave, 80);
+        });
+        nlObserver.observe(section, { childList: true, subtree: true });
+
+        setTimeout(injectHolidayInfoIntoNightLeave, 100);
+    }
+
+    setInterval(attachNightLeaveObserver, 800);
+
+    // تحديث الحقن عند تغيير السنة/الشهر
+    document.addEventListener('change', function(e) {
+        if (e.target && (e.target.id === 'nl-year' || e.target.id === 'nl-month')) {
+            setTimeout(injectHolidayInfoIntoNightLeave, 150);
+        }
+    }, true);
+
+    // ==================================================
+    // PART 7: بطاقة العطلات في التحليلات
+    // ==================================================
+    function renderAnalyticsHolidays(y, m) {
+        var container = document.getElementById('analytics-holidays-container');
+        if (!container) {
+            var eventsContainer = document.getElementById('analytics-general-events-container');
+            if (!eventsContainer || !eventsContainer.parentNode) return;
+            container = document.createElement('div');
+            container.id = 'analytics-holidays-container';
+            eventsContainer.parentNode.insertBefore(container, eventsContainer);
+        }
+
+        var ph = {};
+        try {
+            if (typeof publicHolidays !== 'undefined' && publicHolidays) ph = publicHolidays;
+            else ph = JSON.parse(localStorage.getItem('MIL_HOLIDAYS_V1') || '{}');
+        } catch(e) { ph = {}; }
+
+        var monthStr = String(m).padStart(2, '0');
+        var found = [];
+        for (var dateKey in ph) {
+            if (dateKey.length === 10) {
+                var parts = dateKey.split('-');
+                if (parseInt(parts[0]) === y && parts[1] === monthStr) {
+                    var hol = ph[dateKey];
+                    var name = typeof hol === 'string' ? hol : hol.name;
+                    var color = (typeof hol === 'object' && hol.color) ? hol.color : '#00ff88';
+                    found.push({ day: parseInt(parts[2]), dateKey: dateKey, name: name, color: color });
+                }
+            }
+        }
+        found.sort(function(a, b) { return a.day - b.day; });
+
+        if (found.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        var monthNames = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+        var monthName = monthNames[m - 1];
+
+        var html = '<div class="analytics-events-section" style="border-color:#00ff88;border-right:5px solid #00ff88;">';
+        html += '<div class="analytics-events-title" style="color:#00ff88;">🏖️ العطلات الرسمية — ' + monthName + ' ' + y + ' (' + found.length + ')</div>';
+        found.forEach(function(h) {
+            var dDate = new Date(y, m - 1, h.day);
+            var dayName = (typeof daysArabic !== 'undefined') ? daysArabic[dDate.getDay()] : '';
+            html += '<div class="analytics-event-item" style="border-right-color:' + h.color + ';">';
+            html += '<div class="analytics-event-date" style="color:' + h.color + ';">📅 ' + h.dateKey + ' (' + dayName + ')</div>';
+            html += '<div class="analytics-event-type" style="color:' + h.color + ';">🏖️ ' + h.name + '</div>';
+            html += '</div>';
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    function patchRenderGeneralAnalytics() {
+        if (typeof window.renderGeneralAnalytics !== 'function') return false;
+        if (window.renderGeneralAnalytics._yearFixV1) return true;
+
+        var orig = window.renderGeneralAnalytics;
+        window.renderGeneralAnalytics = function() {
+            var r = orig.apply(this, arguments);
+            try {
+                var yEl = document.getElementById('analytics-year');
+                var mEl = document.getElementById('analytics-month');
+                if (yEl && mEl) {
+                    var y = parseInt(yEl.value);
+                    var m = parseInt(mEl.value);
+                    setTimeout(function() { renderAnalyticsHolidays(y, m); }, 150);
+                }
+            } catch(e) {}
+            return r;
+        };
+        window.renderGeneralAnalytics._yearFixV1 = true;
+        return true;
+    }
+
+    // ==================================================
+    // Bootstrap — إعادة المحاولة حتى نجاح كل الطبقات
+    // ==================================================
+    function applyAllPatches() {
+        var ok1 = patchSaveCustomHoliday();
+        var ok2 = patchRenderSettingsHolidays();
+        var ok3 = patchRenderCalendar();
+        var ok4 = patchRenderGeneralAnalytics();
+        return ok1 && ok2 && ok3 && ok4;
+    }
+
+    applyAllPatches();
+
+    var tries = 0;
+    var iv = setInterval(function() {
+        tries++;
+        if (applyAllPatches() || tries > 100) {
+            if (tries > 5) clearInterval(iv);
+        }
+    }, 300);
+
+    console.log('✅ Holidays Year Fix v1 ready');
+})();
+</script>
 </body>
 </html>
 ```
