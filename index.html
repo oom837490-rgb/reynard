@@ -23793,6 +23793,102 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('✅ Holidays in Analytics loaded');
 })();
 </script>
+<script id="__analytics_collapsibles_final_v2__">
+(function() {
+    'use strict';
+
+    function applyCollapsibleAndHolidays() {
+        if (typeof window.renderAnalyticsGeneralEvents !== 'function') return;
+        if (window.renderAnalyticsGeneralEvents._collapsiblePatched) return;
+
+        var origRender = window.renderAnalyticsGeneralEvents;
+
+        window.renderAnalyticsGeneralEvents = function(y, m, daysInMonth) {
+            // 1. تشغيل الدالة الأصلية (بترسم الأحداث والرحلات)
+            origRender.apply(this, arguments);
+
+            var container = document.getElementById('analytics-general-events-container');
+            if (!container) return;
+
+            // 2. إضافة العطلات لو مش موجودة
+            if (!container.querySelector('.__holidays_added__')) {
+                var monthStr = String(m).padStart(2, '0');
+                var holidayHtml = '';
+                
+                for (var d = 1; d <= daysInMonth; d++) {
+                    var dateKey = y + '-' + monthStr + '-' + String(d).padStart(2, '0');
+                    var hol = publicHolidays[dateKey];
+                    if (hol) {
+                        var name = typeof hol === 'string' ? hol : hol.name;
+                        var color = (typeof hol === 'object' && hol.color) ? hol.color : '#D4AF37';
+                        holidayHtml += `
+                            <div class="analytics-event-item" style="border-right-color:${color}; margin-top: 8px;">
+                                <div class="analytics-event-date" style="color:${color};">📅 ${dateKey}</div>
+                                <div class="analytics-event-type" style="color:${color};">🗓️ عطلة / مناسبة: ${name}</div>
+                            </div>
+                        `;
+                    }
+                }
+
+                if (holidayHtml !== '') {
+                    var holidaySection = `
+                        <div class="analytics-events-section __holidays_added__" style="border-color: #D4AF37; margin-top: 15px;">
+                            <div class="analytics-events-title" style="color: #D4AF37;">🗓️ مناسبات وعطلات الشهر (${daysInMonth} يوم)</div>
+                            ${holidayHtml}
+                        </div>
+                    `;
+                    container.insertAdjacentHTML('beforeend', holidaySection);
+                }
+            }
+
+            // 3. تحويل كل الأقسام (أحداث + عطلات) لشكل قابل للطي
+            var sections = container.querySelectorAll('.analytics-events-section');
+            sections.forEach(function(sec) {
+                if (sec.dataset.collapsibleApplied) return;
+                
+                var titleEl = sec.querySelector('.analytics-events-title');
+                if (!titleEl) return;
+
+                sec.dataset.collapsibleApplied = 'true';
+                var contentId = '__ana_sec_' + Math.random().toString(36).substr(2, 5) + '__';
+                var titleText = titleEl.innerHTML;
+                
+                // تحويل العنوان لرأس قابل للطي
+                titleEl.className = 'collapsible-header';
+                titleEl.style.borderColor = sec.style.borderColor || 'var(--gold)';
+                titleEl.style.margin = '0 0 10px 0';
+                titleEl.onclick = function() { window.toggleCollapsible(contentId); };
+                titleEl.innerHTML = `<span>${titleText}</span><span class="arrow open" id="${contentId}-arrow">▼</span>`;
+
+                // تجميع المحتوى في حاوية قابلة للطي
+                var contentWrap = document.createElement('div');
+                contentWrap.id = contentId;
+                contentWrap.className = 'collapsible-content open';
+                contentWrap.style.padding = '0';
+                contentWrap.style.border = 'none';
+
+                var nextNode = titleEl.nextSibling;
+                while (nextNode) {
+                    var next = nextNode.nextSibling;
+                    contentWrap.appendChild(nextNode);
+                    nextNode = next;
+                }
+                sec.appendChild(contentWrap);
+            });
+        };
+        window.renderAnalyticsGeneralEvents._collapsiblePatched = true;
+    }
+
+    // تشغيل مستمر لضمان التركيب
+    var tries = 0;
+    var iv = setInterval(function() {
+        tries++;
+        applyCollapsibleAndHolidays();
+        if (tries > 20) clearInterval(iv);
+    }, 250);
+    
+})();
+</script>
 </body>
 </html>
 ```
