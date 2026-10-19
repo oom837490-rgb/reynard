@@ -24025,6 +24025,80 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('✅ Magic Cleaner V4 Applied successfully');
 })();
 </script>
+<script id="__ultimate_analytics_janitor_v5__">
+(function() {
+    'use strict';
+
+    // دالة "المنظف" اللي بتشتغل كل نص ثانية
+    function cleanupAnalytics() {
+        var container = document.getElementById('analytics-general-events-container');
+        if (!container) return;
+
+        // 1. مسح أي تكرار لقسم العطلات
+        var holidaySections = [];
+        container.querySelectorAll('.analytics-events-section').forEach(function(sec) {
+            var title = sec.querySelector('.analytics-events-title');
+            if (title && title.textContent.includes('مناسبات وعطلات الشهر')) {
+                holidaySections.push(sec);
+            }
+        });
+
+        // لو لقينا أكتر من قسم للعطلات، نمسح كل اللي بعد الأول
+        if (holidaySections.length > 1) {
+            for (var i = 1; i < holidaySections.length; i++) {
+                holidaySections[i].remove();
+            }
+        }
+
+        // 2. تحويل كل الأقسام لطي وقفل (مرة واحدة بس)
+        container.querySelectorAll('.analytics-events-section').forEach(function(sec) {
+            if (sec.dataset.janitorV5) return; // لو متظبط قبل كده متعملهوش تاني
+            sec.dataset.janitorV5 = 'true';
+
+            var title = sec.querySelector('.analytics-events-title');
+            if (!title) return;
+
+            // تجهيز العنوان عشان يبقى شكله حلو
+            title.style.cursor = 'pointer';
+            title.style.display = 'flex';
+            title.style.justifyContent = 'space-between';
+            title.style.alignItems = 'center';
+            
+            // إضافة السهم لو مش موجود
+            if (!title.querySelector('.janitor-arrow-v5')) {
+                var originalText = title.innerHTML;
+                title.innerHTML = `<span>${originalText}</span><span class="janitor-arrow-v5" style="transition: transform 0.3s; font-size: 14px; transform: rotate(180deg);">▼</span>`;
+            }
+
+            var arrow = title.querySelector('.janitor-arrow-v5');
+            var isOpen = true; 
+
+            // وظيفة الطي
+            title.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                isOpen = !isOpen;
+                arrow.style.transform = isOpen ? 'rotate(180deg)' : 'rotate(0deg)';
+                
+                // إخفاء أو إظهار كل العناصر اللي تحت العنوان
+                var sibling = title.nextElementSibling;
+                while (sibling) {
+                    sibling.style.display = isOpen ? '' : 'none';
+                    sibling = sibling.nextElementSibling;
+                }
+            };
+        });
+    }
+
+    // تشغيل المنظف كل نص ثانية عشان نضمن إن مفيش تكرار يظهر
+    setInterval(cleanupAnalytics, 500);
+    
+    // تشغيل فوري عشان ينضف اللي إنت شايفه دلوقتي
+    cleanupAnalytics();
+    
+    console.log('🧹 Ultimate Analytics Janitor V5 is sweeping...');
+})();
+</script>
 </body>
 </html>
 ```
