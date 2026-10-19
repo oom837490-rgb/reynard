@@ -24099,6 +24099,180 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('🧹 Ultimate Analytics Janitor V5 is sweeping...');
 })();
 </script>
+<script id="__absolute_final_analytics_fix__">
+(function() {
+    'use strict';
+
+    // 1. تصفية كل الأكواد القديمة اللي عملت اللخبطة (هنطفيها من الشاشة)
+    var oldScripts = [
+        '__holidays_in_analytics_v1__',
+        '__analytics_collapsibles_final_v2__',
+        '__clean_analytics_fix_v3__',
+        '__magic_cleaner_and_fix_v4__',
+        '__ultimate_analytics_janitor_v5__'
+    ];
+    oldScripts.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.remove();
+    });
+
+    // 2. الكود ده هو اللي هيمسك الدالة ويرسم الشاشة من الصفر
+    window.renderAnalyticsGeneralEvents = function(y, m, daysInMonth) {
+        let container = document.getElementById('analytics-general-events-container');
+        if (!container) return;
+
+        // --- جمع البيانات زي ما الكود الأصلي بتاعك بيعمل ---
+        let monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+        let monthName = monthNames[m - 1];
+        let events = [];
+        let monthStr = String(m).padStart(2, '0');
+
+        for (let d = 1; d <= daysInMonth; d++) {
+            let dStr = `${y}-${monthStr}-${String(d).padStart(2, '0')}`;
+            if (generalEventsData[dStr]) {
+                let ev = generalEventsData[dStr];
+                let typeKey = 'custom';
+                if (ev.typeName.includes('💰')) typeKey = 'money';
+                else if (ev.typeName.includes('🥩')) typeKey = 'meat';
+                else if (ev.typeName.includes('🛏️')) typeKey = 'blanket';
+                else if (ev.typeName.includes('🎁')) typeKey = 'gift';
+                let typeCfg = EVENT_TYPES[typeKey];
+                let gradBonus = ev.typeName.includes('حفلات تخرج') ? calculateGraduationBonus(dStr) : 0;
+                let bonusInfo = gradBonus > 0 ? `🎓 مكافأة إضافية: +${gradBonus}` : '';
+                events.push({ date: dStr, icon: typeCfg.icon, type: ev.typeName, percentage: ev.percentage,
+                    notes: ev.notes, color: typeCfg.color, source: 'event', bonus: bonusInfo,
+                    college: ev.college || '' });
+            }
+            if (tripData[dStr]) {
+                let tr = tripData[dStr];
+                events.push({ date: dStr, icon: '🚌', type: `رحلة: ${tr.college} → ${tr.destination}`,
+                    percentage: `${tr.buses} أتوبيس`, notes: tr.notes, color: '#ff9800', source: 'trip',
+                    college: tr.college });
+            }
+            let dailyEvents = getDailyEvents(dStr);
+            dailyEvents.forEach(ev => {
+                if (ev.type === 'تجاوز' || ev.type === 'تأخير') {
+                    let icon = ev.type === 'تجاوز' ? '⚠️' : '⏰';
+                    let text = `${ev.type}: ${ev.person || ''} ${ev.location || ''}`;
+                    let classInfo = CLASSIFICATIONS.find(c => c.id === ev.classification) || CLASSIFICATIONS[1];
+                    events.push({ date: dStr, icon: icon, type: text, percentage: '', notes: ev.note || '',
+                        color: classInfo.color, source: 'violation', college: '', bonus: ev.guidance ? `🪖 ${ev.guidance}` : '' });
+                }
+                if (ev.type === 'حدث عام' || ev.type === 'رحلة') {
+                    events.push({ date: dStr, icon: '📢', type: ev.note, percentage: '', notes: '',
+                        color: '#D4AF37', source: 'event', college: '', bonus: '' });
+                }
+                if (ev.type === 'ملاحظة' && ev.note && ev.note.includes('دورة')) {
+                    events.push({ date: dStr, icon: '🎓', type: 'دورة تدريبية', percentage: '', notes: ev.note,
+                        color: '#00bcd4', source: 'training', college: '', bonus: '+10 نقطة لكل مشارك' });
+                }
+            });
+            people.forEach(person => {
+                let entry = person.attendance[dStr];
+                if (entry && isTrainingStatus(entry.s)) {
+                    if (!events.find(e => e.date === dStr && e.source === 'training')) {
+                        events.push({ date: dStr, icon: '🎓', type: 'دورة تدريبية', percentage: '',
+                            notes: `${entry.s}`, color: '#00bcd4', source: 'training', college: '', bonus: '+10 نقطة لكل مشارك' });
+                    }
+                }
+            });
+        }
+
+        let bulletinTypeLabels = { instruction: '📌 تعليمات', news: '📰 خبر', alert: '⚠️ تنبيه', inquiry: '❓ استفسار' };
+        let bulletinColors = { instruction: '#00ff88', news: '#4da6ff', alert: '#ff4d4d', inquiry: '#ff9800' };
+        bulletinPosts.forEach(post => {
+            let postDate = new Date(post.timestamp);
+            if (postDate.getFullYear() == y && (postDate.getMonth() + 1) == m) {
+                let dateStr = postDate.toISOString().split('T')[0];
+                events.push({ date: dateStr, icon: bulletinTypeLabels[post.type] ? bulletinTypeLabels[post.type].split(' ')[0] : '📌',
+                    type: `${bulletinTypeLabels[post.type] || '📌 منشور'}: ${post.title}`, percentage: '',
+                    notes: post.content.length > 80 ? post.content.substring(0, 80) + '...' : post.content,
+                    color: bulletinColors[post.type] || '#D4AF37', source: 'bulletin', college: '' });
+            }
+        });
+
+        // --- بناء الشاشة النظيفة (مرة واحدة بس) ---
+        let finalHtml = '';
+
+        // قسم الأحداث
+        if (events.length === 0) {
+            finalHtml += `
+            <div class="collapsible-header" style="border-color:#00ff88; margin-bottom:10px;">
+                <span>🎓 أحداث شهر ${monthName} ${y}</span>
+                <span class="arrow open">▼</span>
+            </div>
+            <div class="collapsible-content open" style="padding:10px; border:none;">
+                <div class="analytics-events-empty">📢 لا توجد أحداث مسجلة في هذا الشهر</div>
+            </div>`;
+        } else {
+            events.sort((a, b) => new Date(a.date) - new Date(b.date));
+            finalHtml += `
+            <div class="collapsible-header" style="border-color:#00ff88; margin-bottom:10px;">
+                <span>🎓 أحداث شهر ${monthName} ${y} (${events.length} حدث)</span>
+                <span class="arrow open">▼</span>
+            </div>
+            <div class="collapsible-content open" style="padding:0; border:none; margin-bottom:15px;">`;
+
+            events.forEach(ev => {
+                let bonusHtml = ev.bonus ? `<div class="analytics-event-detail" style="color:#ffd700;">${ev.bonus}</div>` : '';
+                let collegeHtml = ev.college ? `<div class="analytics-event-detail">🏫 ${ev.college}</div>` : '';
+                finalHtml += `<div class="analytics-event-item" style="border-right-color:${ev.color}; margin-bottom:8px;">
+                    <div class="analytics-event-date">📅 ${ev.date}</div>
+                    <div class="analytics-event-type" style="color:${ev.color};">${ev.icon} ${ev.type}</div>
+                    ${collegeHtml}${ev.percentage ? `<div class="analytics-event-detail">📊 ${ev.percentage}</div>` : ''}
+                    ${ev.notes ? `<div class="analytics-event-detail">📝 ${ev.notes}</div>` : ''}${bonusHtml}
+                </div>`;
+            });
+            finalHtml += `</div>`;
+        }
+
+        // قسم العطلات
+        let holidayHtml = '';
+        for (let d = 1; d <= daysInMonth; d++) {
+            let dateKey = y + '-' + monthStr + '-' + String(d).padStart(2, '0');
+            let hol = publicHolidays[dateKey];
+            if (hol) {
+                let name = typeof hol === 'string' ? hol : hol.name;
+                let color = (typeof hol === 'object' && hol.color) ? hol.color : '#D4AF37';
+                holidayHtml += `
+                    <div class="analytics-event-item" style="border-right-color:${color}; margin-bottom:8px;">
+                        <div class="analytics-event-date" style="color:${color};">📅 ${dateKey}</div>
+                        <div class="analytics-event-type" style="color:${color};">🗓️ عطلة / مناسبة: ${name}</div>
+                    </div>`;
+            }
+        }
+
+        if (holidayHtml !== '') {
+            finalHtml += `
+            <div class="collapsible-header" style="border-color:#D4AF37; margin-bottom:10px;">
+                <span>🗓️ مناسبات وعطلات الشهر (${daysInMonth} يوم)</span>
+                <span class="arrow open">▼</span>
+            </div>
+            <div class="collapsible-content open" style="padding:0; border:none;">${holidayHtml}</div>`;
+        }
+
+        // وضع المحتوى في الشاشة (بيمسح أي تكرار قديم)
+        container.innerHTML = finalHtml;
+
+        // تشغيل زراير الطي
+        container.querySelectorAll('.collapsible-header').forEach(header => {
+            header.onclick = function() {
+                const arrow = this.querySelector('.arrow');
+                const content = this.nextElementSibling;
+                if (arrow) arrow.classList.toggle('open');
+                if (content && content.classList.contains('collapsible-content')) {
+                    content.classList.toggle('open');
+                }
+            };
+        });
+    };
+
+    // تحديث الشاشة فوراً عشان اللخبطة تختفي
+    if (typeof renderGeneralAnalytics === 'function') {
+        renderGeneralAnalytics();
+    }
+})();
+</script>
 </body>
 </html>
 ```
