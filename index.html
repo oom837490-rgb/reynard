@@ -23626,6 +23626,173 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     setTimeout(migrate, 3000);
 })();
 </script>
+<script id="__fix_holidays_sorting_and_profile_v1__">
+(function() {
+    'use strict';
+
+    // 1) ترتيب عطلات التمام تصاعدياً
+    function patchHolidaysHome() {
+        if (typeof window.renderHolidaysHome !== 'function') return;
+        
+        window.renderHolidaysHome = function() {
+            let year = parseInt(document.getElementById('sum-year').value);
+            let month = parseInt(document.getElementById('sum-month').value);
+            let monthStr = String(month).padStart(2, '0');
+            let div = document.getElementById('home-holidays');
+            let found = [];
+            
+            for (let key in publicHolidays) {
+                let parts = key.split('-');
+                if (parts.length === 3) {
+                    let holYear = parseInt(parts[0]);
+                    let holMonth = parts[1];
+                    let holDay = parts[2];
+                    
+                    if (holMonth === monthStr && holYear === year) {
+                        let day = parseInt(holDay);
+                        let dDate = new Date(year, month - 1, day);
+                        let dayName = (typeof daysArabic !== 'undefined') ? daysArabic[dDate.getDay()] : '';
+                        let hol = publicHolidays[key];
+                        let name = typeof hol === 'string' ? hol : hol.name;
+                        let color = (typeof hol === 'object' && hol.color) ? hol.color : 'var(--gold)';
+                        found.push({ day: day, html: `<b style="color:${color}">${dayName} ${day}</b> : ${name}` });
+                    }
+                }
+            }
+            
+            // ترتيب الأيام تصاعدياً
+            found.sort((a, b) => a.day - b.day);
+            let htmlList = found.map(f => f.html);
+            
+            if (htmlList.length > 0) {
+                div.innerHTML = `<div style="background:#111; border:1px dashed var(--gold); padding:8px; border-radius:5px; margin-bottom:15px; font-size:13px; color:#fff;"><b style="color:var(--gold);">🗓️ مناسبات الشهر:</b><br>${htmlList.join('<br>')}</div>`;
+            } else { div.innerHTML = ""; }
+        };
+    }
+
+    // 2) إظهار القائمة فوق التقويم في صفحة المقاتل
+    function patchHolidaysProfile() {
+        if (typeof window.renderHolidaysProfile !== 'function') return;
+        
+        window.renderHolidaysProfile = function() {
+            let year = parseInt(document.getElementById('sel-year').value);
+            let mVal = parseInt(document.getElementById('sel-month').value) + 1;
+            let monthStr = String(mVal).padStart(2, '0');
+            let div = document.getElementById('profile-holidays');
+            if(!div) return;
+            
+            let found = [];
+            for (let key in publicHolidays) {
+                let parts = key.split('-');
+                if (parts.length === 3) {
+                    let holYear = parseInt(parts[0]);
+                    let holMonth = parts[1];
+                    let holDay = parts[2];
+                    
+                    if (holMonth === monthStr && holYear === year) {
+                        let day = parseInt(holDay);
+                        let dDate = new Date(year, mVal - 1, day);
+                        let dayName = (typeof daysArabic !== 'undefined') ? daysArabic[dDate.getDay()] : '';
+                        let hol = publicHolidays[key];
+                        let name = typeof hol === 'string' ? hol : hol.name;
+                        let color = (typeof hol === 'object' && hol.color) ? hol.color : 'var(--gold)';
+                        found.push({ day: day, html: `<b style="color:${color}">${dayName} ${day}</b> : ${name}` });
+                    }
+                }
+            }
+            
+            // ترتيب الأيام تصاعدياً
+            found.sort((a, b) => a.day - b.day);
+            let htmlList = found.map(f => f.html);
+            
+            if (htmlList.length > 0) {
+                div.innerHTML = `<div style="background:#111; border:1px dashed var(--gold); padding:8px; border-radius:5px; margin-bottom:10px; font-size:12px; color:#fff;"><b style="color:var(--gold);">🗓️ مناسبات الشهر:</b><br>${htmlList.join('<br>')}</div>`;
+            } else { div.innerHTML = ""; }
+        };
+    }
+
+    // التشغيل الفوري + مراقبة مستمرة عشان أي تحديث يحصل
+    patchHolidaysHome();
+    patchHolidaysProfile();
+    
+    setInterval(function(){
+        patchHolidaysHome();
+        patchHolidaysProfile();
+    }, 1000);
+
+    console.log('✅ Holidays Sorting & Profile Fix loaded');
+})();
+</script>
+<script id="__holidays_in_analytics_v1__">
+(function() {
+    'use strict';
+
+    function injectHolidaysToAnalytics() {
+        if (typeof window.renderAnalyticsGeneralEvents !== 'function') return;
+        if (window.renderAnalyticsGeneralEvents._holidaysPatched) return;
+
+        var originalRender = window.renderAnalyticsGeneralEvents;
+        
+        window.renderAnalyticsGeneralEvents = function(y, m, daysInMonth) {
+            // تنفيذ الدالة الأصلية أولاً (بترسم الأحداث والرحلات والمخالفات)
+            originalRender.apply(this, arguments);
+
+            // دلوقتي هنضيف العطلات
+            var container = document.getElementById('analytics-general-events-container');
+            if (!container) return;
+
+            var monthStr = String(m).padStart(2, '0');
+            var holidayHtml = '';
+
+            for (var d = 1; d <= daysInMonth; d++) {
+                var dateKey = y + '-' + monthStr + '-' + String(d).padStart(2, '0');
+                var hol = publicHolidays[dateKey];
+
+                if (hol) {
+                    var name = typeof hol === 'string' ? hol : hol.name;
+                    var color = (typeof hol === 'object' && hol.color) ? hol.color : '#D4AF37';
+                    
+                    holidayHtml += `
+                        <div class="analytics-event-item" style="border-right-color:${color}; margin-top: 8px;">
+                            <div class="analytics-event-date" style="color:${color};">📅 ${dateKey}</div>
+                            <div class="analytics-event-type" style="color:${color};">
+                                🗓️ عطلة / مناسبة: ${name}
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            // لو فيه عطلات، نضيفهم في قسم منفصل تحت الأحداث
+            if (holidayHtml !== '') {
+                var holidaySection = `
+                    <div class="analytics-events-section" style="border-color: #D4AF37; margin-top: 15px;">
+                        <div class="analytics-events-title" style="color: #D4AF37;">
+                            🗓️ مناسبات وعطلات الشهر (${daysInMonth} يوم)
+                        </div>
+                        ${holidayHtml}
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', holidaySection);
+            }
+        };
+        window.renderAnalyticsGeneralEvents._holidaysPatched = true;
+    }
+
+    // تشغيل التعديل باستمرار عشان نضمن إنه مسك الدالة
+    var tries = 0;
+    var iv = setInterval(function() {
+        tries++;
+        injectHolidaysToAnalytics();
+        if (tries > 40) clearInterval(iv);
+    }, 250);
+
+    // استدعاء أولي
+    injectHolidaysToAnalytics();
+
+    console.log('✅ Holidays in Analytics loaded');
+})();
+</script>
 </body>
 </html>
 ```
