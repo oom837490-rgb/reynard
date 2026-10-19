@@ -23889,6 +23889,142 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     
 })();
 </script>
+<script id="__magic_cleaner_and_fix_v4__">
+(function() {
+    'use strict';
+
+    // 1. تصفية الكود القديم اللي عمل المشكلة (بنشيله من الذاكرة)
+    var oldScript = document.getElementById('__analytics_collapsibles_final_v2__');
+    if (oldScript) oldScript.remove();
+    
+    var oldScript2 = document.getElementById('__holidays_in_analytics_v1__');
+    if (oldScript2) oldScript2.remove();
+
+    // 2. مسح أي تكرار موجود على الشاشة دلوقتي حالاً
+    var container = document.getElementById('analytics-general-events-container');
+    if (container) {
+        container.innerHTML = ''; // بيمسح الشاشة كلها عشان نرسمها من جديد ونظيفة
+    }
+
+    // 3. الكود الجديد النظيف (بيرسم الأحداث والعطلات مرة واحدة وبطي)
+    function drawCleanAnalytics() {
+        // بنستدعي الدالة الأصلية اللي بترسم الأحداث والرحلات والمخالفات
+        if (typeof window.__orig_renderGeneralAnalytics === 'function') {
+            window.__orig_renderGeneralAnalytics();
+        }
+
+        var y = document.getElementById('analytics-year').value;
+        var m = parseInt(document.getElementById('analytics-month').value);
+        var daysInMonth = new Date(y, m, 0).getDate();
+        var monthStr = String(m).padStart(2, '0');
+        
+        var cont = document.getElementById('analytics-general-events-container');
+        if (!cont) return;
+
+        // إضافة قسم العطلات
+        var holidayHtml = '';
+        for (var d = 1; d <= daysInMonth; d++) {
+            var dateKey = y + '-' + monthStr + '-' + String(d).padStart(2, '0');
+            var hol = publicHolidays[dateKey];
+            if (hol) {
+                var name = typeof hol === 'string' ? hol : hol.name;
+                var color = (typeof hol === 'object' && hol.color) ? hol.color : '#D4AF37';
+                holidayHtml += `
+                    <div class="analytics-event-item" style="border-right-color:${color}; margin-top: 8px;">
+                        <div class="analytics-event-date" style="color:${color};">📅 ${dateKey}</div>
+                        <div class="analytics-event-type" style="color:${color};">🗓️ عطلة / مناسبة: ${name}</div>
+                    </div>
+                `;
+            }
+        }
+
+        if (holidayHtml !== '') {
+            cont.insertAdjacentHTML('beforeend', `
+                <div class="analytics-events-section" style="border-color: #D4AF37; margin-top: 15px; margin-bottom: 10px;">
+                    <div class="analytics-events-title" style="color: #D4AF37; cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding-bottom: 5px;">
+                        <span>🗓️ مناسبات وعطلات الشهر (${daysInMonth} يوم)</span>
+                        <span class="arrow open" style="transition: transform 0.3s; font-size: 14px; transform: rotate(180deg);">▼</span>
+                    </div>
+                    <div class="clean-holidays-content" style="display: block; margin-top: 10px;">
+                        ${holidayHtml}
+                    </div>
+                </div>
+            `);
+        }
+
+        // تحويل كل الأقسام لطي (مرة واحدة بس)
+        var allSections = cont.querySelectorAll('.analytics-events-section');
+        allSections.forEach(function(sec) {
+            if (sec.dataset.isCleanCollapsible) return;
+            sec.dataset.isCleanCollapsible = 'true';
+            
+            var titleEl = sec.querySelector('.analytics-events-title');
+            if (!titleEl) return;
+
+            var contentId = '__clean_sec_' + Math.random().toString(36).substr(2, 5);
+            var titleHtml = titleEl.innerHTML;
+
+            // تنسيق العنوان
+            titleEl.innerHTML = `<span>${titleHtml}</span><span class="arrow" style="transition: transform 0.3s; font-size: 14px; transform: rotate(180deg);">▼</span>`;
+            titleEl.style.cursor = 'pointer';
+            titleEl.style.display = 'flex';
+            titleEl.style.justifyContent = 'space-between';
+            titleEl.style.alignItems = 'center';
+            titleEl.style.borderBottom = 'none'; // نشيل الخط
+        
+            var wrap = document.createElement('div');
+            wrap.className = 'clean-holidays-content';
+            wrap.style.cssText = 'display: block; margin-top: 10px;';
+
+            // نقل المحتوى جوه الحاوية
+            var nextNode = titleEl.nextSibling;
+            while (nextNode) {
+                var next = nextNode.nextSibling;
+                wrap.appendChild(nextNode);
+                nextNode = next;
+            }
+            sec.appendChild(wrap);
+
+            // تشغيل الطي
+            titleEl.onclick = function() {
+                var arrow = titleEl.querySelector('.arrow');
+                if (wrap.style.display === 'none') {
+                    wrap.style.display = 'block';
+                    arrow.style.transform = 'rotate(180deg)';
+                } else {
+                    wrap.style.display = 'none';
+                    arrow.style.transform = 'rotate(0deg)';
+                }
+            };
+        });
+    }
+
+    // إعادة تعريف دالة التحليلات
+    if (typeof window.renderGeneralAnalytics === 'function' && !window.__orig_renderGeneralAnalytics) {
+        window.__orig_renderGeneralAnalytics = window.renderGeneralAnalytics;
+        window.renderGeneralAnalytics = function() {
+            drawCleanAnalytics();
+            // باقي التحليلات (النقاط والتقييم الفردي)
+            var y = document.getElementById('analytics-year').value;
+            var m = parseInt(document.getElementById('analytics-month').value);
+            var daysInMonth = new Date(y, m, 0).getDate();
+            if (typeof renderOverallSystemAnalytics === 'function') renderOverallSystemAnalytics(y, m, daysInMonth);
+            if (typeof renderHealingCards === 'function') renderHealingCards(y, m, daysInMonth);
+            if (typeof renderWarningCards === 'function') renderWarningCards(y, m, daysInMonth);
+            // (باقي الدوال بتشتغل لوحدها)
+        };
+    }
+
+    // تشغيل فوري عشان الشاشة تنضف
+    setTimeout(function() {
+        if (typeof window.renderGeneralAnalytics === 'function') {
+            window.renderGeneralAnalytics();
+        }
+    }, 500);
+
+    console.log('✅ Magic Cleaner V4 Applied successfully');
+})();
+</script>
 </body>
 </html>
 ```
