@@ -24427,6 +24427,857 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('✅ Bulk Delete Fix v3 — Anti-Race Protection Loaded');
 })();
 </script>
+<!-- ============================================ -->
+<!-- 🛡️ إصلاح تكرار الأحداث في صفحة التحليلات     -->
+<!-- ============================================ -->
+<script id="__fix_duplicate_events_in_analytics_v1__">
+(function() {
+    'use strict';
+    
+    if (window.__fixDuplicateEventsAnalytics__) return;
+    window.__fixDuplicateEventsAnalytics__ = true;
+
+    function applyPatch() {
+        if (typeof window.renderAnalyticsGeneralEvents !== 'function') return false;
+        if (window.renderAnalyticsGeneralEvents._fixed) return true;
+
+        // استبدال الدالة الأصلية بنسخة معدلة
+        window.renderAnalyticsGeneralEvents = function(y, m, daysInMonth) {
+            let container = document.getElementById('analytics-general-events-container');
+            if (!container) return;
+            let monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+            let monthName = monthNames[m - 1];
+            let events = [];
+            let monthStr = String(m).padStart(2, '0');
+
+            for (let d = 1; d <= daysInMonth; d++) {
+                let dStr = `${y}-${monthStr}-${String(d).padStart(2, '0')}`;
+                
+                // 1. قراءة الأحداث العامة من مصدرها الأساسي
+                if (generalEventsData[dStr]) {
+                    let ev = generalEventsData[dStr];
+                    let typeKey = 'custom';
+                    if (ev.typeName.includes('💰')) typeKey = 'money';
+                    else if (ev.typeName.includes('🥩')) typeKey = 'meat';
+                    else if (ev.typeName.includes('🛏️')) typeKey = 'blanket';
+                    else if (ev.typeName.includes('🎁')) typeKey = 'gift';
+                    let typeCfg = EVENT_TYPES[typeKey];
+                    let gradBonus = ev.typeName.includes('حفلات تخرج') ? calculateGraduationBonus(dStr) : 0;
+                    let bonusInfo = gradBonus > 0 ? `🎓 مكافأة إضافية: +${gradBonus}` : '';
+                    events.push({ 
+                        date: dStr, icon: typeCfg.icon, type: ev.typeName, percentage: ev.percentage,
+                        notes: ev.notes, color: typeCfg.color, source: 'event', bonus: bonusInfo,
+                        college: ev.college || '' 
+                    });
+                }
+                
+                // 2. قراءة الرحلات من مصدرها الأساسي
+                if (tripData[dStr]) {
+                    let tr = tripData[dStr];
+                    events.push({ 
+                        date: dStr, icon: '🚌', type: `رحلة: ${tr.college} → ${tr.destination}`,
+                        percentage: `${tr.buses} أتوبيس`, notes: tr.notes, color: '#ff9800', source: 'trip',
+                        college: tr.college 
+                    });
+                }
+                
+                // 3. قراءة دفتر الأحوال (تم إزالة الأحداث العامة والرحلات من هنا لمنع التكرار)
+                let dailyEvents = getDailyEvents(dStr);
+                dailyEvents.forEach(ev => {
+                    if (ev.type === 'تجاوز' || ev.type === 'تأخير') {
+                        let icon = ev.type === 'تجاوز' ? '⚠️' : '⏰';
+                        let text = `${ev.type}: ${ev.person || ''} ${ev.location || ''}`;
+                        let classInfo = CLASSIFICATIONS.find(c => c.id === ev.classification) || CLASSIFICATIONS[1];
+                        events.push({
+                            date: dStr, icon: icon, type: text, percentage: '', notes: ev.note || '',
+                            color: classInfo.color, source: 'violation', college: '',
+                            bonus: ev.guidance ? `🪖 ${ev.guidance}` : ''
+                        });
+                    }
+                    
+                    if (ev.type === 'ملاحظة' && ev.note && ev.note.includes('دورة')) {
+                        events.push({
+                            date: dStr, icon: '🎓', type: 'دورة تدريبية', percentage: '',
+                            notes: ev.note, color: '#00bcd4', source: 'training', college: '',
+                            bonus: '+10 نقطة لكل مشارك'
+                        });
+                    }
+                });
+                
+                // 4. الدورات التدريبية من سجل الحضور
+                people.forEach(person => {
+                    let entry = person.attendance[dStr];
+                    if (entry && isTrainingStatus(entry.s)) {
+                        if (!events.find(e => e.date === dStr && e.source === 'training')) {
+                            events.push({ date: dStr, icon: '🎓', type: 'دورة تدريبية', percentage: '',
+                                notes: `${entry.s}`, color: '#00bcd4', source: 'training', college: '',
+                                bonus: '+10 نقطة لكل مشارك' });
+                        }
+                    }
+                });
+            }
+
+            // 5. منشورات لوحة التعليمات
+            let bulletinTypeLabels = { instruction: '📌 تعليمات', news: '📰 خبر', alert: '⚠️ تنبيه', inquiry: '❓ استفسار' };
+            let bulletinColors = { instruction: '#00ff88', news: '#4da6ff', alert: '#ff4d4d', inquiry: '#ff9800' };
+            bulletinPosts.forEach(post => {
+                let postDate = new Date(post.timestamp);
+                let postY = postDate.getFullYear();
+                let postM = postDate.getMonth() + 1;
+                if (postY == y && postM == m) {
+                    let dateStr = postDate.toISOString().split('T')[0];
+                    events.push({
+                        date: dateStr,
+                        icon: bulletinTypeLabels[post.type] ? bulletinTypeLabels[post.type].split(' ')[0] : '📌',
+                        type: `${bulletinTypeLabels[post.type] || '📌 منشور'}: ${post.title}`,
+                        percentage: '', notes: post.content.length > 80 ? post.content.substring(0, 80) + '...' : post.content,
+                        color: bulletinColors[post.type] || '#D4AF37', source: 'bulletin', college: ''
+                    });
+                }
+            });
+
+            if (events.length === 0) {
+                container.innerHTML = `<div class="analytics-events-section"><div class="analytics-events-title">🎓 أحداث شهر ${monthName} ${y}</div><div class="analytics-events-empty">📢 لا توجد أحداث مسجلة في هذا الشهر</div></div>`;
+                return;
+            }
+
+            events.sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            let html = `<div class="analytics-events-section"><div class="analytics-events-title">🎓 أحداث شهر ${monthName} ${y} (${events.length} حدث)</div>`;
+            events.forEach(ev => {
+                let bonusHtml = ev.bonus ? `<div class="analytics-event-detail" style="color:#ffd700;">${ev.bonus}</div>` : '';
+                let collegeHtml = ev.college ? `<div class="analytics-event-detail">🏫 ${ev.college}</div>` : '';
+                
+                html += `<div class="analytics-event-item" style="border-right-color:${ev.color};">
+                    <div class="analytics-event-date">📅 ${ev.date}</div>
+                    <div class="analytics-event-type" style="color:${ev.color};">${ev.icon} ${ev.type}</div>
+                    ${collegeHtml}
+                    ${ev.percentage ? `<div class="analytics-event-detail">📊 ${ev.percentage}</div>` : ''}
+                    ${ev.notes ? `<div class="analytics-event-detail">📝 ${ev.notes}</div>` : ''}
+                    ${bonusHtml}
+                </div>`;
+            });
+            html += `</div>`;
+            
+            container.innerHTML = html;
+        };
+        
+        window.renderAnalyticsGeneralEvents._fixed = true;
+        return true;
+    }
+
+    // التأكد من تطبيق التعديل بمجرد تحميل الصفحة
+    var attempts = 0;
+    var interval = setInterval(function() {
+        attempts++;
+        if (applyPatch() || attempts > 50) {
+            clearInterval(interval);
+        }
+    }, 500);
+    
+    applyPatch();
+
+    console.log('🛡️ Analytics Duplicate Events Fix loaded successfully');
+})();
+</script>
+<!-- ============================================ -->
+<!-- 🌤️ تحسينات حالات الطقس (إيموجي + تحذيرات أمنية) -->
+<!-- ============================================ -->
+<script id="__weather_enhancements_v2__">
+(function() {
+    'use strict';
+
+    if (window.__weatherEnhancementsV2__) return;
+    window.__weatherEnhancementsV2__ = true;
+
+    // 1. خريطة الإيموجي لكل حالة فرعية
+    const SUB_EMOJI_MAP = {
+        clear_calm: '🌌', clear_breeze: '🍃', clear_moon: '🌕', clear_vision: '👁️', clear_dead: '🌑',
+        cloudy_light: '⛅', cloudy_medium: '☁️', cloudy_heavy: '🌥️', cloudy_low: '🌫️', cloudy_dark: '🌑',
+        fog_light: '🌫️', fog_medium: '🌫️', fog_heavy: '🌁', fog_extreme: '⚠️', fog_zerovision: '🚫',
+        windy_light: '🍃', windy_medium: '💨', windy_strong: '💨', windy_storm: '🌪️', windy_sand: '🌪️🏜️',
+        rainy_light: '🌦️', rainy_medium: '🌧️', rainy_heavy: '🌧️🌧️', rainy_storm: '⛈️', rainy_flood: '🌊',
+        stormy_spark: '⚡', stormy_thunderlight: '🌩️', stormy_thundermed: '🌩️🌩️', stormy_storm: '⛈️', stormy_severe: '🚨',
+        freezing_light: '❄️', freezing_medium: '🥶', freezing_heavy: '🧊', freezing_frost: '❄️❄️', freezing_extreme: '🚨',
+        snow_light: '🌨️', snow_medium: '❄️❄️', snow_heavy: '❄️❄️❄️', snow_storm: '🌨️🌨️', snow_accum: '⛄'
+    };
+
+    // 2. قاموس التعليمات الأمنية الشاملة (الجديد)
+    const SECURITY_WEATHER_INSTRUCTIONS = {
+        'fog': [
+            'استخدام الكشافات أثناء الحركة داخل الحرم الجامعي.',
+            'تنبيه قائدي المركبات بتخفيف السرعة وزيادة مسافة الأمان.',
+            'زيادة الانتباه واليقظة عند البوابات لمنع أي تسلل.',
+            'التحرك بحذر شديد داخل الطرق المفتوحة بين الكليات.'
+        ],
+        'windy': [
+            'التأكد من غلق جميع النوافذ في مباني الكليات (خاصة التي يعين عليها أفراد خدمة).',
+            'التأكد من تثبيت الأجسام القابلة للتطاير أو الإبلاغ عنها فوراً.',
+            'الابتعاد عن الأشجار واللافتات الإعلانية غير الثابتة.',
+            'متابعة أي زجاج مكسور أو أجسام سقطت بسبب الرياح وإبلاغ الصيانة.',
+            'الحذر أثناء السير في المناطق المفتوحة وتجنب الوقوف تحت المظلات المتهالكة.'
+        ],
+        'windy_sand': [
+            'ارتداء الكمامات الطبية أو القماشية فوراً.',
+            'يفضل استخدام نظارات واقية لحماية العينين من الأتربة.',
+            'غلق النوافذ والأبواب غير الضرورية في المكاتب وغرف الأمن.',
+            'متابعة دخول الأتربة إلى المباني وإبلاغ فريق النظافة.',
+            'تنبيه أصحاب الأمراض الصدرية بضرورة البقاء في أماكن مغلقة.',
+            'تقليل البقاء في الأماكن المكشوفة قدر الإمكان.'
+        ],
+        'rainy': [
+            'ارتداء واقي المطر (الترنجات) والأحذية المخصصة لمنع الانزلاق.',
+            'الحذر أثناء السير على الأرضيات المبللة والرخام.',
+            'متابعة مداخل المباني لمنع دخول مياه الأمطار للداخل.',
+            'التأكد من سلامة الإضاءة الخارجية في الممرات.',
+            'الحذر الشديد أثناء صعود وهبوط السلالم.'
+        ],
+        'rainy_heavy': [
+            'متابعة أماكن تجمع المياه في البوابات والطرق الرئيسية.',
+            'الإبلاغ الفوري عن أي تجمع مياه يعيق حركة الأفراد أو المركبات.',
+            'متابعة مصارف المياه (البلاعات) والتأكد من عدم انسدادها.',
+            'الابتعاد عن مصادر الكهرباء القريبة من المياه (أعمدة الإنارة وغيرها).',
+            'زيادة الحذر أثناء الانتقال بين الكليات وتجنب برك المياه.'
+        ],
+        'stormy': [
+            'عدم الوقوف نهائياً في الأماكن المفتوحة أثناء البرق والرعد.',
+            'الابتعاد عن الأشجار والأعمدة والهياكل المعدنية.',
+            'الاحتماء داخل أقرب مبنى آمن أو غرفة أمن.',
+            'تجنب لمس أي كابلات أو أسلاك كهربائية مكشوفة.',
+            'متابعة أي أعطال كهربائية في المباني وإبلاغ الدفاع المدني/الصيانة.'
+        ],
+        'stormy_severe': [
+            'إخلاء المناطق المكشوفة والبوابات المفتوحة فوراً.',
+            'البقاء في أماكن مغلقة وآمنة حتى انتهاء العاصفة.',
+            'تجنب استخدام الأجهزة الكهربائية الموصلة بالتيار.',
+            'متابعة حالة الطقس باستمرار عبر غرفة العمليات.',
+            'التزام الهدوء التام وعدم الذعر، وتنفيذ أوامر القائد بدقة.'
+        ],
+        'freezing': [
+            'ارتداء الجاكيت الشتوي الثقيل والملابس الداخلية الحرارية.',
+            'ارتداء القفازات وتغطية الرأس والرقبة جيداً.',
+            'ارتداء أحذية وجوارب شتوية مناسبة.',
+            'توفير مشروبات ساخنة (شاي/قهوة/ينسون) للأفراد في الاستراحة.',
+            'عدم الوقوف لفترات طويلة دون حركة (التحرك الدوري لتوليد الحرارة).',
+            'متابعة أي فرد تظهر عليه علامات انخفاض الحرارة (رجفة، شحوب، إرهاق) وإبلاغ المسعف فوراً.',
+            'تفقد سلامة التمديدات المائية لمنع تجمدها وتلفها.'
+        ],
+        'snow': [
+            'ارتداء الملابس الشتوية الثقيلة وواقي المطر.',
+            'استخدام أحذية مانعة للانزلاق (مهم جداً لتجنب السقوط).',
+            'زيادة الحذر على السلالم والمنحدرات والمداخل الرخامية.',
+            'توفير فترات راحة دافئة للأفراد بشكل متكرر.',
+            'متابعة تراكم الثلوج وإبلاغ فرق الصيانة لتطهير الطرق.'
+        ],
+        'snow_heavy': [
+            'منع الحركة غير الضرورية تماماً.',
+            'الالتزام بالأماكن المغلقة.',
+            'متابعة أي فرد يعاني من البرد.',
+            'الإبلاغ الفوري عن أي انهيارات أو سقوط أجسام بفعل الثلوج.'
+        ]
+    };
+
+    // دالة لاستخراج التعليمات الجديدة
+    function getEnhancedInstructions(mainKey, subKey) {
+        let instructions = [];
+        
+        // جلب التعليمات الأساسية
+        if (mainKey && SECURITY_WEATHER_INSTRUCTIONS[mainKey]) {
+            instructions = instructions.concat(SECURITY_WEATHER_INSTRUCTIONS[mainKey]);
+        }
+        // جلب تعليمات الحالة الفرعية (إن وجدت)
+        if (subKey && SECURITY_WEATHER_INSTRUCTIONS[subKey]) {
+            instructions = instructions.concat(SECURITY_WEATHER_INSTRUCTIONS[subKey]);
+        }
+        
+        // إذا لم توجد تعليمات مخصصة، نستخدم القديمة كاحتياط
+        if (instructions.length === 0) {
+            if (WEATHER_INSTRUCTIONS[mainKey] && WEATHER_INSTRUCTIONS[mainKey].instructions) {
+                instructions = instructions.concat(WEATHER_INSTRUCTIONS[mainKey].instructions);
+            }
+            if (subKey && WEATHER_INSTRUCTIONS[subKey] && WEATHER_INSTRUCTIONS[subKey].instructions) {
+                instructions = instructions.concat(WEATHER_INSTRUCTIONS[subKey].instructions);
+            }
+        }
+        
+        // إزالة التكرار
+        return instructions.filter((item, index) => instructions.indexOf(item) === index);
+    }
+
+    // استبدال دالة تحديث التعليمات بالنسخة الجديدة
+    function patchUpdateWeatherInstructions() {
+        if (typeof window.updateWeatherInstructions !== 'function') return false;
+        if (window.updateWeatherInstructions._enhancedV2) return true;
+
+        window.updateWeatherInstructions = function() {
+            const instructionsContainer = document.getElementById('weather-instructions-container');
+            const warningsContainer = document.getElementById('weather-warnings-container');
+            const instructionsContent = document.getElementById('weather-instructions-content');
+            const warningsContent = document.getElementById('weather-warnings-content');
+            if (!instructionsContainer || !warningsContainer || !instructionsContent || !warningsContent) return;
+
+            const dateKey = getCurrentDateKey();
+            const weatherKey = weatherData[dateKey];
+            if (!weatherKey) {
+                instructionsContainer.style.display = 'none';
+                warningsContainer.style.display = 'none';
+                return;
+            }
+
+            let mainKey = weatherKey;
+            let subKey = null;
+            if (weatherKey.includes('_')) {
+                subKey = weatherKey;
+                mainKey = weatherKey.split('_')[0];
+            }
+
+            let allInstructions = getEnhancedInstructions(mainKey, subKey);
+
+            const warningKeywords = ['لا', 'تجنب', 'الحذر', 'الابتعاد', 'عدم', 'تنبيه', 'متابعة', 'إخلاء', 'طوارئ', 'احتماء', 'تجنب', 'منع'];
+            let warnings = [];
+            let normalInstructions = [];
+            
+            allInstructions.forEach(item => {
+                const isWarning = warningKeywords.some(keyword => item.includes(keyword));
+                if (isWarning) {
+                    warnings.push(item);
+                } else {
+                    normalInstructions.push(item);
+                }
+            });
+
+            if (normalInstructions.length > 0) {
+                instructionsContainer.style.display = 'block';
+                instructionsContent.innerHTML = normalInstructions.map(item => `• ${item}`).join('<br>');
+            } else {
+                instructionsContainer.style.display = 'none';
+            }
+
+            if (warnings.length > 0) {
+                warningsContainer.style.display = 'block';
+                warningsContent.innerHTML = warnings.map(item => `⚠️ ${item}`).join('<br>');
+            } else {
+                warningsContainer.style.display = 'none';
+            }
+        };
+
+        window.updateWeatherInstructions._enhancedV2 = true;
+        return true;
+    }
+
+    // إضافة الإيموجي للقائمة المنسدلة
+    function patchWeatherDropdown() {
+        const weatherSelect = document.getElementById('weather-select');
+        if (!weatherSelect) return;
+
+        // البحث عن الخيارات التي تفتقد الإيموجي وإضافته
+        const options = weatherSelect.querySelectorAll('option');
+        options.forEach(opt => {
+            const val = opt.value;
+            if (val && SUB_EMOJI_MAP[val]) {
+                let txt = opt.textContent;
+                // إذا كان النص لا يبدأ بإيموجي (نتحقق من أول حرفين)
+                if (!/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/u.test(txt.substring(0, 4))) {
+                    opt.textContent = `${SUB_EMOJI_MAP[val]} ${txt}`;
+                }
+            }
+        });
+    }
+
+    // تطبيق التعديلات
+    function applyAll() {
+        let ok1 = patchUpdateWeatherInstructions();
+        let ok2 = false;
+        
+        // محاولة تعديل القائمة المنسدلة (قد تحتاج لبعض الوقت حتى يتم ملؤها)
+        if (document.getElementById('weather-select')) {
+            patchWeatherDropdown();
+            ok2 = true;
+        }
+        
+        return ok1 && ok2;
+    }
+
+    // تشغيل التعديلات فوراً وعند أي تغيير
+    applyAll();
+    
+    // مراقبة مستمرة للتأكد من بقاء الإيموجي (لأن القائمة يتم إعادة بنائها أحياناً)
+    setInterval(function() {
+        if (window.__USER_ROLE__ === 'admin' || window.__USER_ROLE__ === 'viewer') {
+            patchWeatherDropdown();
+            // إعادة تفعيل الدالة لو تم استبدالها من كود آخر
+            if (typeof window.updateWeatherInstructions === 'function' && !window.updateWeatherInstructions._enhancedV2) {
+                patchUpdateWeatherInstructions();
+            }
+        }
+    }, 1500);
+
+    console.log('🌤️ Weather Enhancements V2 loaded (Emojis + Security Instructions)');
+})();
+</script>
+<!-- ============================================ -->
+<!-- 📍 نقاط مخصصة للأماكن الجديدة v1             -->
+<!-- يحافظ على المعايير القديمة + إضافة أماكن جديدة -->
+<!-- ============================================ -->
+<script id="__reynard_custom_location_bonus_v1__">
+(function() {
+    'use strict';
+
+    if (window.__reynardCustomLocationBonusV1__) return;
+    window.__reynardCustomLocationBonusV1__ = true;
+
+    console.log('📍 Custom Location Bonus v1 loading...');
+
+    // ============================================================
+    // 1. تخزين النقاط المخصصة
+    // ============================================================
+    let customLocationBonuses = {};
+    try {
+        customLocationBonuses = JSON.parse(localStorage.getItem('MIL_CUSTOM_LOC_BONUSES') || '{}');
+        if (typeof customLocationBonuses !== 'object' || Array.isArray(customLocationBonuses)) {
+            customLocationBonuses = {};
+        }
+    } catch(e) { customLocationBonuses = {}; }
+
+    function saveCustomBonuses() {
+        try {
+            localStorage.setItem('MIL_CUSTOM_LOC_BONUSES', JSON.stringify(customLocationBonuses));
+        } catch(e) {}
+    }
+
+    function isInOldMap(name) {
+        if (typeof LOCATION_BONUS_MAP === 'undefined') return false;
+        for (let key in LOCATION_BONUS_MAP) {
+            if (name.includes(key)) return true;
+        }
+        return false;
+    }
+
+    // ============================================================
+    // 2. تعديل دالة حساب نقاط المكان
+    // ============================================================
+    function patchCalculateLocationBonus() {
+        if (typeof window.calculateLocationBonus !== 'function') return false;
+        if (window.calculateLocationBonus._customPatched) return true;
+
+        window.calculateLocationBonus = function(location, weatherBonus) {
+            if (!location) return 0;
+
+            // 1) الأول: المعايير القديمة (زي ما هي بالحرف)
+            if (typeof LOCATION_BONUS_MAP !== 'undefined') {
+                for (let key in LOCATION_BONUS_MAP) {
+                    if (location.includes(key)) {
+                        const cfg = LOCATION_BONUS_MAP[key];
+                        let ratio = Math.min((weatherBonus || 0) / 12, 1);
+                        let bonus = Math.round(cfg.base + (cfg.max - cfg.base) * ratio);
+                        return bonus;
+                    }
+                }
+            }
+
+            // 2) الثاني: الأماكن المخصصة (الجديدة)
+            for (let key in customLocationBonuses) {
+                if (location.includes(key)) {
+                    return customLocationBonuses[key];
+                }
+            }
+
+            // 3) الثالث: افتراضي = 3 نقاط
+            return 3;
+        };
+        window.calculateLocationBonus._customPatched = true;
+        return true;
+    }
+
+    // ============================================================
+    // 3. تعديل إضافة مكان جديد — يسألك عن النقاط
+    // ============================================================
+    function patchMilAddItem() {
+        if (typeof window.milAddItem !== 'function') return false;
+        if (window.milAddItem._customPatched) return true;
+
+        window.milAddItem = function() {
+            const input = document.getElementById('milMgmtInput');
+            const color = document.getElementById('milMgmtColor').value || '#00ff88';
+            const name = (input.value || '').trim();
+
+            if (!name) { alert('⚠️ اكتب الاسم أولاً!'); return; }
+
+            const arr = milCurrentTab === 'locations' ? locations : statuses;
+            const colors = milCurrentTab === 'locations' ? locationColors : statusColors;
+
+            if (arr.includes(name)) { alert('⚠️ الاسم موجود مسبقاً!'); return; }
+
+            // لو مكان جديد ومش في المعايير القديمة → اسأل عن النقاط
+            if (milCurrentTab === 'locations' && !isInOldMap(name)) {
+                let bonusStr = prompt(
+                    '📍 المكان "' + name + '"\n\n' +
+                    'هذا المكان غير موجود في المعايير القديمة.\n' +
+                    '💰 حدد النقاط اليومية له (افتراضي: 3):',
+                    '3'
+                );
+                if (bonusStr === null) return;
+                let bonus = parseFloat(bonusStr);
+                if (isNaN(bonus) || bonus < 0) bonus = 3;
+                customLocationBonuses[name] = bonus;
+                saveCustomBonuses();
+            }
+
+            arr.push(name);
+            colors[name] = color;
+            milSaveCurrent();
+            input.value = '';
+            milRenderAll();
+            if (typeof playSound === 'function') playSound('success');
+        };
+        window.milAddItem._customPatched = true;
+        return true;
+    }
+
+    // ============================================================
+    // 4. تعديل مكان موجود — يظهر النقاط الحالية
+    // ============================================================
+    function patchMilEditItem() {
+        if (typeof window.milEditItem !== 'function') return false;
+        if (window.milEditItem._customPatched) return true;
+
+        window.milEditItem = function(idx) {
+            const arr = milCurrentTab === 'locations' ? locations : statuses;
+            const colors = milCurrentTab === 'locations' ? locationColors : statusColors;
+            const oldName = arr[idx];
+            if (!oldName) return;
+
+            const newName = prompt('✏️ تعديل الاسم:', oldName);
+            if (newName === null) return;
+            const clean = newName.trim();
+            if (!clean) { alert('⚠️ الاسم فارغ'); return; }
+            if (clean !== oldName && arr.includes(clean)) { alert('⚠️ الاسم موجود'); return; }
+
+            const oldColor = colors[oldName] || '#0f0';
+            const newColor = prompt('🎨 لون التمييز:', oldColor);
+            if (newColor === null) return;
+
+            if (milCurrentTab === 'locations' && !isInOldMap(clean)) {
+                let currentBonus = customLocationBonuses[oldName] !== undefined
+                    ? customLocationBonuses[oldName]
+                    : (customLocationBonuses[clean] !== undefined ? customLocationBonuses[clean] : 3);
+                let bonusStr = prompt('💰 نقاط المكان "' + clean + '" يومياً:', currentBonus);
+                if (bonusStr === null) return;
+                let bonus = parseFloat(bonusStr);
+                if (isNaN(bonus) || bonus < 0) bonus = currentBonus;
+                customLocationBonuses[clean] = bonus;
+                if (clean !== oldName && customLocationBonuses[oldName] !== undefined) {
+                    delete customLocationBonuses[oldName];
+                }
+                saveCustomBonuses();
+            }
+
+            if (clean !== oldName) { arr[idx] = clean; delete colors[oldName]; }
+            colors[clean] = newColor || oldColor;
+            milSaveCurrent();
+            milRenderAll();
+            if (typeof playSound === 'function') playSound('success');
+        };
+        window.milEditItem._customPatched = true;
+        return true;
+    }
+
+    // ============================================================
+    // 5. تعديل الحذف — يمسح النقاط المخصصة كمان
+    // ============================================================
+    function patchMilDelItem() {
+        if (typeof window.milDelItem !== 'function') return false;
+        if (window.milDelItem._customPatched) return true;
+
+        window.milDelItem = function(idx) {
+            const arr = milCurrentTab === 'locations' ? locations : statuses;
+            const colors = milCurrentTab === 'locations' ? locationColors : statusColors;
+            const item = arr[idx];
+            if (!item) return;
+            if (!confirm('❌ حذف:\n"' + item + '"\n؟')) return;
+            arr.splice(idx, 1);
+            delete colors[item];
+            if (milCurrentTab === 'locations' && customLocationBonuses[item] !== undefined) {
+                delete customLocationBonuses[item];
+                saveCustomBonuses();
+            }
+            milSaveCurrent();
+            milRenderAll();
+            if (typeof playSound === 'function') playSound('success');
+        };
+        window.milDelItem._customPatched = true;
+        return true;
+    }
+
+    // ============================================================
+    // 6. عرض النقاط في قائمة الأماكن
+    // ============================================================
+    function decorateList() {
+        if (typeof milCurrentTab === 'undefined') return;
+        if (milCurrentTab !== 'locations') return;
+
+        const box = document.getElementById('milListLocations');
+        if (!box) return;
+
+        const items = box.querySelectorAll('.mil-mgmt-item');
+        items.forEach((item, idx) => {
+            if (!locations[idx]) return;
+            const name = locations[idx];
+
+            // احسب النقاط
+            let bonus = null;
+            if (typeof LOCATION_BONUS_MAP !== 'undefined') {
+                for (let key in LOCATION_BONUS_MAP) {
+                    if (name.includes(key)) {
+                        const cfg = LOCATION_BONUS_MAP[key];
+                        bonus = cfg.base + '-' + cfg.max;
+                        break;
+                    }
+                }
+            }
+            if (bonus === null && customLocationBonuses[name] !== undefined) {
+                bonus = String(customLocationBonuses[name]);
+            }
+            if (bonus === null) bonus = '3';
+
+            // شيل الشارة القديمة لو موجودة
+            const old = item.querySelector('.__loc_bonus__');
+            if (old) old.remove();
+
+            // أضف شارة جديدة
+            const badge = document.createElement('span');
+            badge.className = '__loc_bonus__';
+            badge.style.cssText = 'color:#ffd700;font-size:10px;background:rgba(255,215,0,0.15);padding:2px 6px;border-radius:8px;margin-right:4px;font-weight:bold;white-space:nowrap;';
+            badge.textContent = '🎖️ ' + bonus;
+
+            const nameEl = item.querySelector('.mil-name');
+            if (nameEl && nameEl.parentNode) {
+                nameEl.parentNode.insertBefore(badge, nameEl.nextSibling);
+            }
+        });
+    }
+
+    // ============================================================
+    // 7. تحديث دليل معايير التقييم
+    // ============================================================
+    function updateScoringGuide() {
+        const guide = document.getElementById('scoring-guide-modal');
+        if (!guide || guide.style.display === 'none') return;
+        if (guide.querySelector('.__custom_locs_guide__')) return;
+
+        const customList = Object.keys(customLocationBonuses);
+        if (customList.length === 0) return;
+
+        const modalBody = guide.querySelector('div > div');
+        if (!modalBody) return;
+
+        const section = document.createElement('div');
+        section.className = '__custom_locs_guide__';
+        section.style.cssText = 'background:#000; border:1px dashed #ffd700; padding:10px; border-radius:5px; margin-bottom:10px;';
+
+        let html = '<h4 style="color:#ffd700; margin-top:0;">📍 أماكن خدمة مخصصة (مضافة)</h4>';
+        html += '<ul style="font-size:13px; color:#fff; padding-right:15px;">';
+        customList.forEach(name => {
+            html += '<li><b>' + name + '</b>: <span style="color:#0f0;">+' + customLocationBonuses[name] + ' نقطة</span></li>';
+        });
+        html += '</ul>';
+        html += '<p style="font-size:11px; color:#888;">تُمنح للحاضرين فقط، وتُجمع مع باقي المكافآت.</p>';
+
+        section.innerHTML = html;
+
+        const closeBtn = modalBody.querySelector('button');
+        if (closeBtn && closeBtn.parentNode) {
+            closeBtn.parentNode.insertBefore(section, closeBtn);
+        } else {
+            modalBody.appendChild(section);
+        }
+    }
+
+    // ============================================================
+    // 8. التشغيل
+    // ============================================================
+    function bootstrap() {
+        patchCalculateLocationBonus();
+        patchMilAddItem();
+        patchMilEditItem();
+        patchMilDelItem();
+
+        setInterval(function() {
+            patchCalculateLocationBonus();
+            patchMilAddItem();
+            patchMilEditItem();
+            patchMilDelItem();
+            try { decorateList(); } catch(e) {}
+            try { updateScoringGuide(); } catch(e) {}
+        }, 800);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootstrap);
+    } else {
+        bootstrap();
+    }
+
+    // ============================================================
+    // فضح الدوال (للتحكم اليدوي لو حبيت)
+    // ============================================================
+    window.__customLocationBonuses__ = {
+        get: function() { return JSON.parse(JSON.stringify(customLocationBonuses)); },
+        set: function(name, bonus) {
+            if (typeof bonus !== 'number' || bonus < 0) return;
+            customLocationBonuses[name] = bonus;
+            saveCustomBonuses();
+        },
+        remove: function(name) {
+            delete customLocationBonuses[name];
+            saveCustomBonuses();
+        }
+    };
+
+    console.log('✅ Custom Location Bonus v1 loaded');
+})();
+</script>
+<!-- ============================================ -->
+<!-- 📊 توضيح نقاط الحضور في تفاصيل النقاط اليومية -->
+<!-- يعدل العرض فقط — الحسابات كما هي              -->
+<!-- ============================================ -->
+<script id="__reynard_show_base_points_v1__">
+(function() {
+    'use strict';
+
+    if (window.__reynardShowBasePointsV1__) return;
+    window.__reynardShowBasePointsV1__ = true;
+
+    console.log('📊 Show Base Points v1 loading...');
+
+    function patchRenderProfilePointsDetails() {
+        if (typeof window.renderProfilePointsDetails !== 'function') return false;
+        if (window.renderProfilePointsDetails._showBasePatched) return true;
+
+        window.renderProfilePointsDetails = function() {
+            const container = document.getElementById('profile-points-details');
+            if (!container || typeof currentIdx === 'undefined' || currentIdx === -1) return;
+            if (typeof people === 'undefined' || !people[currentIdx]) return;
+
+            const person = people[currentIdx];
+            const r = document.getElementById('stats-range').value;
+            const tM = parseInt(document.getElementById('sel-month').value) + 1;
+            const tY = parseInt(document.getElementById('sel-year').value);
+            let detailsHtml = '';
+            let hasData = false;
+
+            let dateKeys = Object.keys(person.attendance);
+            dateKeys.forEach(d => {
+                let [y, mStr] = d.split('-');
+                let yNum = Number(y), mNum = Number(mStr);
+                if ((r === 'year' && yNum === tY) || (r === 'month' && yNum === tY && mNum === tM) || r === 'all') {
+                    let ent = person.attendance[d];
+                    if (ent && ent.s) {
+                        let info = typeof getWeatherInfo === 'function' ? getWeatherInfo(weatherData[d]) : null;
+                        let weatherBonus = info ? info.bonus : 0;
+                        let isPresent = ent.s.includes('حضور') || (typeof isTrainingStatus === 'function' && isTrainingStatus(ent.s));
+                        
+                        // 1. نقاط الحضور الأساسية
+                        let baseAttendance = isPresent ? 10 : 0;
+                        // نقاط إضافية لو دورة
+                        let trainingBonus = 0;
+                        if (isPresent && typeof isTrainingStatus === 'function' && isTrainingStatus(ent.s)) {
+                            trainingBonus = 10;
+                        }
+                        // 2. نقاط الطقس
+                        let baseBonus = isPresent ? weatherBonus : 0;
+                        
+                        // 3. نقاط الأماكن
+                        let extraBonus = 0;
+                        let extraReason = '';
+                        let locs = ent.locations || (ent.l ? [ent.l] : []);
+                        if (isPresent && locs.length > 0) {
+                            locs.forEach(loc => {
+                                let locBonus = typeof calculateLocationBonus === 'function' ? calculateLocationBonus(loc, weatherBonus) : 0;
+                                if (locBonus > 0) {
+                                    extraBonus += locBonus;
+                                    if (!extraReason) {
+                                        for (let key in LOCATION_BONUS_MAP) {
+                                            if (loc.includes(key)) {
+                                                extraReason = LOCATION_BONUS_MAP[key].label;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        }
+
+                        // 4. نقاط التخرج
+                        let gradBonus = 0;
+                        let gradReason = '';
+                        if (isPresent && locs.length > 0 && typeof calculateGraduationBonus === 'function') {
+                            let gb = calculateGraduationBonus(d);
+                            if (gb > 0) {
+                                let hasEligible = locs.some(loc => loc.includes('ب: رئيسية') || loc.includes('ب: ملاعب') || loc.includes('طريق رئيسى') || loc.includes('مشرف عام'));
+                                if (hasEligible) {
+                                    gradBonus = gb;
+                                    gradReason = '🎓 حفلات تخرج';
+                                }
+                            }
+                        }
+
+                        // 5. نقاط الرحلات
+                        let tripBonus = 0;
+                        let tripReason = '';
+                        if (isPresent && locs.length > 0 && tripData[d]) {
+                            locs.forEach(loc => {
+                                if (loc.includes('طريق رئيسى')) { tripBonus += 8; tripReason = '🚌 رحلة (طريق رئيسي)'; }
+                                else if (loc.includes('ب: رئيسية')) { tripBonus += 6; tripReason = '🚌 رحلة (بوابة رئيسية)'; }
+                                else if (loc.includes('م: إدارى')) { tripBonus += 5; tripReason = '🚌 رحلة (مبنى إداري)'; }
+                            });
+                        }
+
+                        // الإجمالي
+                        let total = baseAttendance + baseBonus + extraBonus + gradBonus + tripBonus + trainingBonus;
+
+                        if (total > 0) {
+                            hasData = true;
+                            let locsDisplay = locs.length > 0 ? locs.join(' + ') : 'غير محدد';
+                            detailsHtml += `<div style="background:#0a0a0a; border:1px solid #333; border-radius:6px; padding:8px; margin-bottom:6px;">
+                                <div style="color:var(--gold); font-size:12px; font-weight:bold;">📅 ${d}</div>
+                                <div style="color:#888; font-size:11px; margin-bottom:4px;">📍 ${locsDisplay}</div>
+                                ${baseAttendance > 0 ? `<div class="point-detail-item"><span>✅ حضور (أساسي)</span><span class="pval">+${baseAttendance}</span></div>` : ''}
+                                ${baseBonus > 0 ? `<div class="point-detail-item"><span>🌤️ مكافأة الطقس</span><span class="pval">+${baseBonus}</span></div>` : ''}
+                                ${extraBonus > 0 ? `<div class="point-detail-item"><span>📍 ${extraReason || 'مكافأة مكان'}</span><span class="pval">+${extraBonus}</span></div>` : ''}
+                                ${gradBonus > 0 ? `<div class="point-detail-item"><span>${gradReason}</span><span class="pval">+${gradBonus}</span></div>` : ''}
+                                ${tripBonus > 0 ? `<div class="point-detail-item"><span>${tripReason}</span><span class="pval">+${tripBonus}</span></div>` : ''}
+                                ${trainingBonus > 0 ? `<div class="point-detail-item"><span>🎓 مكافأة تدريب</span><span class="pval">+${trainingBonus}</span></div>` : ''}
+                                <div style="color:#00ff88; font-size:13px; font-weight:bold; margin-top:4px; border-top:1px dashed #333; padding-top:4px;">⭐ الإجمالي: +${total}</div>
+                            </div>`;
+                        }
+                    }
+                }
+            });
+
+            if (!hasData) {
+                detailsHtml = '<div style="color:#666; text-align:center; padding:10px;">لا توجد نقاط مسجلة في هذه الفترة</div>';
+            }
+            container.innerHTML = detailsHtml;
+        };
+        window.renderProfilePointsDetails._showBasePatched = true;
+        return true;
+    }
+
+    function bootstrap() {
+        patchRenderProfilePointsDetails();
+        setInterval(patchRenderProfilePointsDetails, 1000);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootstrap);
+    } else {
+        bootstrap();
+    }
+
+    console.log('✅ Show Base Points v1 loaded');
+})();
+</script>
 </body>
 </html>
 ```
