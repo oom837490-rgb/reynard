@@ -25278,6 +25278,710 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('✅ Show Base Points v1 loaded');
 })();
 </script>
+<!-- ============================================ -->
+<!-- 🧠 Reynard Smart Core v1 — الذكاء الشامل     -->
+<!-- كود واحد يجمع 8 ميزات ذكية                   -->
+<!-- لا يغيّر التصميم — فقط يحسّن المنطق           -->
+<!-- ============================================ -->
+<script id="__reynard_smart_core_v1__">
+(function() {
+    'use strict';
+
+    if (window.__reynardSmartCoreV1__) return;
+    window.__reynardSmartCoreV1__ = true;
+
+    console.log('🧠 Smart Core v1 loading...');
+
+    // ============================================================
+    // ⚙️ الإعدادات الافتراضية (قابلة للتعديل من الإعدادات)
+    // ============================================================
+    const CONFIG_KEY = 'MIL_SMART_CONFIG_V1';
+
+    const DEFAULT_CONFIG = {
+        weights: { absence: 1.0, violation: 1.0, delay: 0.5, casual: 0.5 },
+        thresholds: { level1: 1.0, level2: 2.0, level3: 3.0, level4: 4.0, level5: 5.0 },
+        maxCardsShown: 5,
+        showAllEnabled: false,
+        anomalyDays: 3
+    };
+
+    let config;
+    try {
+        config = JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null') || {};
+        // دمج مع الافتراضي
+        config.weights = Object.assign({}, DEFAULT_CONFIG.weights, config.weights);
+        config.thresholds = Object.assign({}, DEFAULT_CONFIG.thresholds, config.thresholds);
+        if (typeof config.maxCardsShown !== 'number') config.maxCardsShown = DEFAULT_CONFIG.maxCardsShown;
+        if (typeof config.anomalyDays !== 'number') config.anomalyDays = DEFAULT_CONFIG.anomalyDays;
+        if (typeof config.showAllEnabled !== 'boolean') config.showAllEnabled = false;
+    } catch(e) {
+        config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    }
+
+    function saveConfig() {
+        try { localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); } catch(e) {}
+    }
+
+    // ============================================================
+    // 🛠️ دوال مساعدة
+    // ============================================================
+    function isCasualStatus(s) {
+        if (!s) return false;
+        if (s.indexOf('نصف') !== -1) return false;
+        return s.indexOf('🟠') !== -1 || s.indexOf('عارضة') !== -1;
+    }
+
+    function fmtDate(d) {
+        return d.getFullYear() + '-' +
+               String(d.getMonth() + 1).padStart(2, '0') + '-' +
+               String(d.getDate()).padStart(2, '0');
+    }
+
+    function getLevelIndex(weight) {
+        const t = config.thresholds;
+        if (weight >= t.level5) return 4;
+        if (weight >= t.level4) return 3;
+        if (weight >= t.level3) return 2;
+        if (weight >= t.level2) return 1;
+        if (weight >= t.level1) return 0;
+        return -1;
+    }
+
+    // ============================================================
+    // 1️⃣ البطاقات التحذيرية الذكية
+    // ============================================================
+    function smartRenderWarningCards(y, m, daysInMonth) {
+        const container = document.getElementById('warning-cards-container');
+        if (!container) return;
+        if (typeof people === 'undefined' || !Array.isArray(people)) return;
+        if (typeof WARNING_LEVELS === 'undefined') return;
+
+        const personEvents = {};
+        people.forEach(person => {
+            personEvents[person.name] = { violations: [], delays: [], absences: [], casuals: [] };
+        });
+
+        const monthStr = String(m).padStart(2, '0');
+
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dStr = `${y}-${monthStr}-${String(d).padStart(2, '0')}`;
+
+            // تجاوزات/تأخيرات
+            let events = [];
+            try { events = typeof getDailyEvents === 'function' ? getDailyEvents(dStr) : []; } catch(e) {}
+            events.forEach(ev => {
+                if (ev.type === 'تجاوز' && ev.person && personEvents[ev.person]) {
+                    personEvents[ev.person].violations.push({ date: dStr, ...ev });
+                } else if (ev.type === 'تأخير' && ev.person && personEvents[ev.person]) {
+                    personEvents[ev.person].delays.push({ date: dStr, ...ev });
+                }
+            });
+
+            // غياب/عارضة
+            people.forEach(person => {
+                const entry = person.attendance && person.attendance[dStr];
+                if (!entry || !entry.s) return;
+                if (entry.s.includes('غياب') && personEvents[person.name]) {
+                    personEvents[person.name].absences.push({ date: dStr });
+                } else if (isCasualStatus(entry.s) && personEvents[person.name]) {
+                    personEvents[person.name].casuals.push({ date: dStr });
+                }
+            });
+        }
+
+        // حساب الأوزان
+        const violators = [];
+        for (const name in personEvents) {
+            const ev = personEvents[name];
+            const weight =
+                (ev.absences.length * config.weights.absence) +
+                (ev.violations.length * config.weights.violation) +
+                (ev.delays.length * config.weights.delay) +
+                (ev.casuals.length * config.weights.casual);
+
+            if (weight > 0) {
+                const person = people.find(p => p.name === name);
+                if (person) {
+                    violators.push({
+                        person, events: ev, weight,
+                        total: ev.violations.length + ev.delays.length + ev.absences.length
+                    });
+                }
+            }
+        }
+
+        // ترتيب حسب الوزن (الأشد أولاً)
+        violators.sort((a, b) => b.weight - a.weight);
+
+        const displayList = config.showAllEnabled
+            ? violators
+            : violators.slice(0, config.maxCardsShown);
+
+        if (displayList.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        const monthNames = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+        const monthName = monthNames[m - 1];
+
+        let html = `
+            <div class="warning-cards-section">
+                <div class="collapsible-header" onclick="toggleCollapsible('warning-cards-content')" style="border-color:#ff4d4d;">
+                    <span>⚠️ البطاقات التحذيرية (${monthName} ${y})</span>
+                    <span class="arrow open" id="warning-cards-arrow">▼</span>
+                </div>
+                <div id="warning-cards-content" class="collapsible-content open">
+                    <div class="warning-cards-title">⚠️ البطاقات التحذيرية (${monthName} ${y})</div>
+        `;
+
+        displayList.forEach((v, idx) => {
+            const levelIdx = getLevelIndex(v.weight);
+            if (levelIdx === -1) return;
+            const level = WARNING_LEVELS[levelIdx];
+
+            let violationsList = '';
+
+            if (v.events.absences.length > 0) {
+                violationsList += `<div class="warning-card-violation-item">🚫 <b>الغياب:</b> ${v.events.absences.length} يوم</div>`;
+            }
+            if (v.events.violations.length > 0) {
+                violationsList += `<div class="warning-card-violation-item">⚠️ <b>التجاوزات:</b> ${v.events.violations.length}</div>`;
+                v.events.violations.slice(0, 3).forEach(vio => {
+                    const cls = vio.classification || 'note';
+                    const info = (typeof CLASSIFICATIONS !== 'undefined'
+                        ? CLASSIFICATIONS.find(c => c.id === cls)
+                        : null) || { class: 'classification-note', label: '🔵 ملاحظة' };
+                    violationsList += `<div style="padding-right:10px; font-size:11px; color:#ffcccc; border-bottom:1px dashed rgba(255,255,255,0.05); margin-bottom:4px;">
+                        <span class="violation-classification ${info.class}">${info.label}</span>
+                        <span>${vio.date}: ${vio.note || ''}</span>
+                        ${vio.guidance ? `<br><span style="color:#ffeb3b; font-size:10px;">🪖 ${vio.guidance}</span>` : ''}
+                    </div>`;
+                });
+            }
+            if (v.events.delays.length > 0) {
+                violationsList += `<div class="warning-card-violation-item">⏰ <b>التأخيرات:</b> ${v.events.delays.length}</div>`;
+            }
+            if (v.events.casuals.length > 0) {
+                violationsList += `<div class="warning-card-violation-item">🟠 <b>العارضة:</b> ${v.events.casuals.length} يوم <span style="opacity:0.7;font-size:10px;">(وزن ×${config.weights.casual})</span></div>`;
+            }
+
+            const decision = level.decision(v.person.name);
+
+            const weightLine = `<div class="warning-card-info-row" style="opacity:0.65;font-size:10px;"><span class="warning-card-info-label">⚖️ الوزن:</span><span class="warning-card-info-value">${v.weight.toFixed(1)}</span></div>`;
+
+            html += `
+                <div class="warning-card-item ${level.class}">
+                    <div class="warning-card-header">
+                        <div class="warning-card-title">${level.title}</div>
+                        <div class="warning-card-level">المركز #${idx + 1}</div>
+                    </div>
+                    <div class="warning-card-body">
+                        <div class="warning-card-info">
+                            <div class="warning-card-info-row"><span class="warning-card-info-label">👤 المقاتل:</span><span class="warning-card-info-value">${v.person.name}</span></div>
+                            <div class="warning-card-info-row"><span class="warning-card-info-label">🎖️ الرتبة:</span><span class="warning-card-info-value">${v.person.rank}</span></div>
+                            <div class="warning-card-info-row"><span class="warning-card-info-label">📅 الشهر:</span><span class="warning-card-info-value">${monthName} ${y}</span></div>
+                            <div class="warning-card-info-row"><span class="warning-card-info-label">📊 إجمالي المخالفات:</span><span class="warning-card-info-value">${v.total}</span></div>
+                            ${weightLine}
+                        </div>
+                        <div class="warning-card-violations">
+                            <div class="warning-card-violations-title">📋 سجل المخالفات:</div>
+                            ${violationsList || '<div style="opacity:0.6;font-size:11px;">لا توجد تفاصيل</div>'}
+                        </div>
+                        <div class="warning-card-decision">
+                            <div class="warning-card-decision-title">💬 قرار القيادة:</div>
+                            <div style="white-space:pre-line;">${decision}</div>
+                        </div>
+                        <div class="warning-card-status">${level.status}</div>
+                    </div>
+                    <div style="margin-top:10px; text-align:center;">
+                        <button onclick="sendWarningWhatsApp('${v.person.name}', '${v.person.rank}', '${level.title}', '${level.status}', '${decision.replace(/'/g, "\\'")}', '${monthName}', '${y}')" style="background:#25D366; color:#fff; border:none; padding:8px 16px; border-radius:5px; cursor:pointer; font-size:12px; font-weight:bold;">📲 إرسال واتساب</button>
+                    </div>
+                </div>
+            `;
+        });
+
+        // زر عرض الكل
+        if (violators.length > config.maxCardsShown) {
+            if (config.showAllEnabled) {
+                html += `<div style="text-align:center;padding:10px;margin-top:10px;">
+                    <button onclick="window.__smartHideAll__()" style="background:#444;color:#fff;border:none;padding:10px 20px;border-radius:8px;font-weight:bold;cursor:pointer;font-size:13px;">🔽 عرض الأقل فقط</button>
+                </div>`;
+            } else {
+                html += `<div style="text-align:center;padding:10px;margin-top:10px;">
+                    <button onclick="window.__smartShowAll__()" style="background:linear-gradient(135deg,#4da6ff,#0066cc);color:#fff;border:none;padding:10px 20px;border-radius:8px;font-weight:bold;cursor:pointer;font-size:13px;">👁️ عرض الكل (${violators.length - config.maxCardsShown} إضافي)</button>
+                </div>`;
+            }
+        }
+
+        html += `</div></div>`;
+        container.innerHTML = html;
+    }
+
+    window.__smartShowAll__ = function() {
+        config.showAllEnabled = true;
+        saveConfig();
+        __smartRefreshCards();
+    };
+
+    window.__smartHideAll__ = function() {
+        config.showAllEnabled = false;
+        saveConfig();
+        __smartRefreshCards();
+    };
+
+    function __smartRefreshCards() {
+        const y = document.getElementById('analytics-year');
+        const m = document.getElementById('analytics-month');
+        if (y && m) {
+            const daysInMonth = new Date(parseInt(y.value), parseInt(m.value), 0).getDate();
+            smartRenderWarningCards(parseInt(y.value), parseInt(m.value), daysInMonth);
+        }
+    }
+
+    // استبدال الدالة الأصلية
+    try {
+        window.renderWarningCards = smartRenderWarningCards;
+        window.renderWarningCards._casualPatched = true;
+        window.renderWarningCards._smartV1 = true;
+    } catch(e) { console.warn('Smart cards replace failed:', e); }
+
+    // ============================================================
+    // 2️⃣ لوحة الإعدادات الذكية
+    // ============================================================
+    function injectSettingsPanel() {
+        const settingsView = document.getElementById('view-settings');
+        if (!settingsView) return;
+        if (document.getElementById('__smart_settings_panel__')) return;
+
+        const firstCard = settingsView.querySelector('.card');
+        if (!firstCard) return;
+
+        const panel = document.createElement('div');
+        panel.className = 'card';
+        panel.id = '__smart_settings_panel__';
+        panel.style.cssText = 'margin-top:15px;';
+
+        const weightsKeys = [
+            ['absence', '🚫 الغياب'],
+            ['violation', '⚠️ التجاوز'],
+            ['delay', '⏰ التأخير'],
+            ['casual', '🟠 العارضة']
+        ];
+
+        const thresholdsKeys = [
+            ['level1', '🟡 أولي'],
+            ['level2', '🟠 ثاني'],
+            ['level3', '🔴 ثالث'],
+            ['level4', '🚨 رابع'],
+            ['level5', '⚫ خامس']
+        ];
+
+        let panelHTML = `
+            <div class="collapsible-header" onclick="window.__smartTogglePanel__()">
+                <span>🧠 الإعدادات الذكية — نظام الإنذارات</span>
+                <span class="arrow" id="__smart_settings_arrow__">▼</span>
+            </div>
+            <div id="__smart_settings_content__" class="collapsible-content">
+                <div style="background:rgba(77,166,255,0.08);border:1px dashed #4da6ff;border-radius:8px;padding:10px;margin-bottom:12px;font-size:11px;color:#b3d9ff;line-height:1.7;">
+                    💡 <b>ملاحظة:</b> هذه الأوزان تُستخدم فقط لتحديد شدة البطاقة التحذيرية — لا تؤثر على نظام النقاط والتقييم الشهري.
+                </div>
+                <h4 style="color:var(--gold);font-size:13px;margin:10px 0 8px;">⚖️ الأوزان</h4>
+        `;
+
+        weightsKeys.forEach(([key, label]) => {
+            panelHTML += `
+                <div style="display:grid;grid-template-columns:1fr 80px;gap:6px;align-items:center;margin-bottom:6px;">
+                    <label style="color:#ddd;font-size:12px;">${label}:</label>
+                    <input type="number" step="0.1" min="0" value="${config.weights[key]}" onchange="window.__smartUpdWeight__('${key}', this.value)" style="padding:6px;font-size:12px;text-align:center;">
+                </div>
+            `;
+        });
+
+        panelHTML += `<h4 style="color:var(--gold);font-size:13px;margin:14px 0 8px;">📊 حدود البطاقات (نقطة البداية)</h4>`;
+
+        thresholdsKeys.forEach(([key, label]) => {
+            panelHTML += `
+                <div style="display:grid;grid-template-columns:1fr 80px;gap:6px;align-items:center;margin-bottom:4px;">
+                    <label style="color:#ddd;font-size:12px;">${label}:</label>
+                    <input type="number" step="0.1" min="0" value="${config.thresholds[key]}" onchange="window.__smartUpdThreshold__('${key}', this.value)" style="padding:5px;font-size:11px;text-align:center;">
+                </div>
+            `;
+        });
+
+        panelHTML += `
+                <h4 style="color:var(--gold);font-size:13px;margin:14px 0 8px;">👁️ العرض</h4>
+                <div style="display:grid;grid-template-columns:1fr 80px;gap:6px;align-items:center;margin-bottom:6px;">
+                    <label style="color:#ddd;font-size:12px;">عدد البطاقات:</label>
+                    <input type="number" min="1" max="20" value="${config.maxCardsShown}" onchange="window.__smartUpdMaxCards__(this.value)" style="padding:6px;font-size:12px;text-align:center;">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 80px;gap:6px;align-items:center;margin-bottom:10px;">
+                    <label style="color:#ddd;font-size:12px;">حد كشف الشذوذ (أيام):</label>
+                    <input type="number" min="2" max="10" value="${config.anomalyDays}" onchange="window.__smartUpdAnomaly__(this.value)" style="padding:6px;font-size:12px;text-align:center;">
+                </div>
+                <button onclick="window.__smartReset__()" style="width:100%;padding:10px;background:#444;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;margin-top:6px;">🔄 استعادة الافتراضي</button>
+            </div>
+        `;
+
+        panel.innerHTML = panelHTML;
+        firstCard.parentNode.insertBefore(panel, firstCard.nextSibling);
+    }
+
+    window.__smartTogglePanel__ = function() {
+        const c = document.getElementById('__smart_settings_content__');
+        const a = document.getElementById('__smart_settings_arrow__');
+        if (!c) return;
+        if (c.classList.contains('open')) {
+            c.classList.remove('open');
+            if (a) a.classList.remove('open');
+        } else {
+            c.classList.add('open');
+            if (a) a.classList.add('open');
+        }
+    };
+
+    window.__smartUpdWeight__ = function(k, v) {
+        const n = parseFloat(v);
+        if (isNaN(n) || n < 0) return;
+        config.weights[k] = n;
+        saveConfig();
+        __smartRefreshCards();
+    };
+
+    window.__smartUpdThreshold__ = function(k, v) {
+        const n = parseFloat(v);
+        if (isNaN(n) || n < 0) return;
+        config.thresholds[k] = n;
+        saveConfig();
+        __smartRefreshCards();
+    };
+
+    window.__smartUpdMaxCards__ = function(v) {
+        const n = parseInt(v);
+        if (isNaN(n) || n < 1) return;
+        config.maxCardsShown = n;
+        saveConfig();
+        __smartRefreshCards();
+    };
+
+    window.__smartUpdAnomaly__ = function(v) {
+        const n = parseInt(v);
+        if (isNaN(n) || n < 2) return;
+        config.anomalyDays = n;
+        saveConfig();
+    };
+
+    window.__smartReset__ = function() {
+        if (!confirm('🔄 استعادة الإعدادات الافتراضية؟')) return;
+        config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+        saveConfig();
+        const p = document.getElementById('__smart_settings_panel__');
+        if (p) p.remove();
+        injectSettingsPanel();
+        setTimeout(() => {
+            const c = document.getElementById('__smart_settings_content__');
+            const a = document.getElementById('__smart_settings_arrow__');
+            if (c) c.classList.add('open');
+            if (a) a.classList.add('open');
+        }, 50);
+        __smartRefreshCards();
+    };
+
+    // ============================================================
+    // 3️⃣ فحص صحة البيانات
+    // ============================================================
+    function checkDataHealth() {
+        if (typeof people === 'undefined' || !Array.isArray(people)) return;
+
+        const issues = [];
+        const seenCodes = {};
+        const seenNames = {};
+
+        people.forEach(p => {
+            if (!p.name || !p.name.trim()) issues.push({ type: 'empty_name', name: '—' });
+            if (!p.code) issues.push({ type: 'empty_code', name: p.name || '—' });
+
+            const codeKey = String(p.code || '');
+            if (codeKey && seenCodes[codeKey]) {
+                issues.push({ type: 'dup_code', name: p.name, code: p.code });
+            } else if (codeKey) {
+                seenCodes[codeKey] = true;
+            }
+
+            const nameKey = (p.name || '').trim();
+            if (nameKey && seenNames[nameKey]) {
+                issues.push({ type: 'dup_name', name: p.name });
+            } else if (nameKey) {
+                seenNames[nameKey] = true;
+            }
+        });
+
+        if (issues.length > 0) {
+            window.__dataHealthIssues__ = issues;
+            showHealthBadge(issues.length);
+        }
+    }
+
+    function showHealthBadge(count) {
+        if (document.getElementById('__data_health_badge__')) return;
+        const badge = document.createElement('div');
+        badge.id = '__data_health_badge__';
+        badge.style.cssText = 'position:fixed;bottom:180px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#ff9800,#e65100);color:#fff;padding:8px 16px;border-radius:20px;font-size:11px;font-weight:bold;z-index:998;cursor:pointer;box-shadow:0 4px 15px rgba(255,152,0,0.5);direction:rtl;';
+        badge.textContent = '⚠️ ' + count + ' ملاحظة على البيانات';
+        badge.onclick = showHealthDetails;
+        document.body.appendChild(badge);
+        setTimeout(() => { if (badge.parentNode) badge.style.opacity = '0.7'; }, 20000);
+    }
+
+    function showHealthDetails() {
+        const issues = window.__dataHealthIssues__ || [];
+        if (!issues.length) { alert('✅ لا توجد مشاكل'); return; }
+        const types = { empty_name: 'اسم فاضي', empty_code: 'رقم عسكري فاضي', dup_code: 'رقم مكرر', dup_name: 'اسم مكرر' };
+        let text = '📋 المشاكل:\n\n';
+        issues.forEach((i, idx) => {
+            text += (idx + 1) + '. ' + types[i.type] + ': ' + i.name;
+            if (i.code) text += ' (#' + i.code + ')';
+            text += '\n';
+        });
+        alert(text);
+    }
+
+    // ============================================================
+    // 4️⃣ كشف الشذوذ (غياب متتالي)
+    // ============================================================
+    function detectAnomalies() {
+        if (typeof people === 'undefined' || !Array.isArray(people)) return [];
+        const anomalies = [];
+        const today = new Date();
+        const threshold = config.anomalyDays || 3;
+
+        people.forEach(person => {
+            if (!person.attendance) return;
+            let currentStreak = 0;
+            let maxStreak = 0;
+
+            for (let i = 0; i < 30; i++) {
+                const date = new Date(today);
+                date.setDate(date.getDate() - i);
+                const dStr = fmtDate(date);
+                const entry = person.attendance[dStr];
+
+                if (entry && entry.s && entry.s.includes('غياب')) {
+                    currentStreak++;
+                    if (currentStreak > maxStreak) maxStreak = currentStreak;
+                } else if (entry && entry.s) {
+                    currentStreak = 0;
+                }
+            }
+
+            if (maxStreak >= threshold) {
+                anomalies.push({ name: person.name, rank: person.rank, consecutive: maxStreak });
+            }
+        });
+
+        return anomalies;
+    }
+
+    function injectAnomalies() {
+        const av = document.getElementById('view-analytics');
+        if (!av || av.classList.contains('hidden')) return;
+
+        let box = document.getElementById('__anomalies_box__');
+        if (box) return;
+
+        const anomalies = detectAnomalies();
+        if (anomalies.length === 0) return;
+
+        const target = document.getElementById('general-system-analytics');
+        if (!target || !target.parentNode) return;
+
+        box = document.createElement('div');
+        box.id = '__anomalies_box__';
+        box.style.cssText = 'background:rgba(255,77,77,0.1);border:1px solid #ff4d4d;border-right:4px solid #ff4d4d;border-radius:8px;padding:10px;margin:10px 0;font-size:12px;color:#ffcccc;';
+
+        let html = '<div style="color:#ff4d4d;font-weight:bold;margin-bottom:6px;">🚨 كشف الشذوذ — غياب متتالي ' + (config.anomalyDays || 3) + '+ أيام</div>';
+        anomalies.forEach(a => {
+            html += `<div style="padding:4px 0;border-bottom:1px dashed rgba(255,77,77,0.3);">👤 <b>${a.name}</b> (${a.rank}) — ${a.consecutive} أيام متتالية</div>`;
+        });
+        box.innerHTML = html;
+        target.parentNode.insertBefore(box, target.nextSibling);
+    }
+
+    // ============================================================
+    // 5️⃣ كشف تعارض التكليفات (في خريطة التمركز)
+    // ============================================================
+    function enhanceLocationReport() {
+        const report = document.getElementById('location-report');
+        if (!report) return;
+        if (report.querySelector('.__smart_conflicts__')) return;
+
+        const y = document.getElementById('sum-year')?.value;
+        const m = document.getElementById('sum-month')?.value;
+        const d = document.getElementById('sum-day')?.value;
+        if (!y || !m || !d) return;
+        if (typeof people === 'undefined') return;
+
+        const dStr = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const conflicts = [];
+
+        people.forEach(person => {
+            const entry = person.attendance && person.attendance[dStr];
+            if (!entry || !entry.s) return;
+            const isPresent = entry.s.includes('حضور') || (typeof isTrainingStatus === 'function' && isTrainingStatus(entry.s));
+            if (!isPresent) return;
+
+            const locs = entry.locations || (entry.l ? [entry.l] : []);
+            if (locs.length < 2) return;
+
+            const hasLeader = locs.some(l => l.includes('مدير') || l.includes('مشرف') || l.includes('حكمدار') || l.includes('مساعد'));
+            const hasRegular = locs.some(l => !l.includes('مدير') && !l.includes('مشرف') && !l.includes('حكمدار') && !l.includes('مساعد'));
+
+            if (hasLeader && hasRegular) {
+                conflicts.push({ name: person.name, locs });
+            }
+        });
+
+        if (conflicts.length === 0) return;
+
+        const box = document.createElement('div');
+        box.className = '__smart_conflicts__';
+        box.style.cssText = 'background:rgba(255,152,0,0.1);border:1px solid #ff9800;border-radius:6px;padding:8px;margin-top:10px;font-size:11px;color:#ffcc80;';
+
+        let html = '<div style="color:#ff9800;font-weight:bold;margin-bottom:4px;">⚠️ تنبيهات ذكية:</div>';
+        conflicts.forEach(c => {
+            html += `<div>👤 <b>${c.name}</b> — قيادة + خدمة: ${c.locs.join(' + ')}</div>`;
+        });
+        box.innerHTML = html;
+        report.appendChild(box);
+    }
+
+    // ============================================================
+    // 6️⃣ النسخة الاحتياطية التلقائية (أسبوعية)
+    // ============================================================
+    function tryAutoBackup() {
+        try {
+            const last = parseInt(localStorage.getItem('MIL_LAST_BACKUP') || '0');
+            const now = Date.now();
+            if (now - last < 7 * 24 * 60 * 60 * 1000) return;
+
+            const data = {
+                timestamp: new Date().toISOString(),
+                people: JSON.parse(localStorage.getItem('MIL_FINAL_V15') || '[]'),
+                notes: JSON.parse(localStorage.getItem('MIL_SHIFT_NOTES') || '{}'),
+                weather: JSON.parse(localStorage.getItem('MIL_WEATHER_V1') || '{}'),
+                events: JSON.parse(localStorage.getItem('MIL_GENERAL_EVENTS_V1') || '{}'),
+                bulletin: JSON.parse(localStorage.getItem('MIL_BULLETIN_V1') || '[]'),
+                holidays: JSON.parse(localStorage.getItem('MIL_HOLIDAYS_V1') || '{}'),
+                weeklyRest: JSON.parse(localStorage.getItem('MIL_WEEKLY_REST_V1') || '{}')
+            };
+
+            let backups = [];
+            try { backups = JSON.parse(localStorage.getItem('MIL_AUTO_BACKUPS') || '[]'); } catch(e) {}
+            backups.unshift(data);
+            backups = backups.slice(0, 4);
+            localStorage.setItem('MIL_AUTO_BACKUPS', JSON.stringify(backups));
+            localStorage.setItem('MIL_LAST_BACKUP', String(now));
+            console.log('✅ Auto backup created');
+        } catch(e) { console.warn('Auto backup failed', e); }
+    }
+
+    // ============================================================
+    // 7️⃣ ذاكرة الطقس
+    // ============================================================
+    function injectWeatherMemory() {
+        const wc = document.querySelector('.weather-card');
+        if (!wc) return;
+        if (wc.querySelector('.__weather_memory__')) return;
+
+        const dateKey = typeof getCurrentDateKey === 'function' ? getCurrentDateKey() : null;
+        if (!dateKey) return;
+
+        const [y, m] = dateKey.split('-');
+        const lastYear = String(parseInt(y) - 1);
+
+        if (typeof weatherData === 'undefined') return;
+
+        let lastYearCount = 0;
+        let currentCount = 0;
+        for (const key in weatherData) {
+            if (key.startsWith(lastYear + '-' + m + '-')) lastYearCount++;
+            if (key.startsWith(y + '-' + m + '-')) currentCount++;
+        }
+
+        if (lastYearCount === 0 && currentCount === 0) return;
+
+        const mem = document.createElement('div');
+        mem.className = '__weather_memory__';
+        mem.style.cssText = 'margin-top:8px;padding:6px 10px;background:rgba(77,166,255,0.08);border-radius:6px;font-size:11px;color:#4da6ff;text-align:center;';
+
+        let parts = [];
+        if (lastYearCount > 0) parts.push(`العام الماضي: ${lastYearCount} يوم`);
+        if (currentCount > 0) parts.push(`هذا الشهر: ${currentCount} يوم`);
+
+        mem.textContent = '📅 ' + parts.join(' — ');
+        wc.appendChild(mem);
+    }
+
+    // ============================================================
+    // 8️⃣ توازن الراحات
+    // ============================================================
+    function checkRestBalance() {
+        const rv = document.getElementById('view-rest');
+        if (!rv || rv.classList.contains('hidden')) return;
+
+        let wr;
+        try { wr = JSON.parse(localStorage.getItem('MIL_WEEKLY_REST_V1') || '{}'); } catch(e) { return; }
+
+        const days = ['sat','sun','mon','tue','wed','thu','fri'];
+        const counts = days.map(d => (wr[d] || []).length);
+        const max = Math.max(...counts);
+        const min = Math.min(...counts);
+        if (max === 0) return;
+        if (max - min <= 3) return;
+
+        let box = document.getElementById('__rest_balance_warning__');
+        if (box) return;
+
+        const daysAr = { sat:'السبت', sun:'الأحد', mon:'الإثنين', tue:'الثلاثاء', wed:'الأربعاء', thu:'الخميس', fri:'الجمعة' };
+        const maxDay = daysAr[days[counts.indexOf(max)]];
+        const minDay = daysAr[days[counts.indexOf(min)]];
+
+        box = document.createElement('div');
+        box.id = '__rest_balance_warning__';
+        box.style.cssText = 'background:rgba(255,152,0,0.1);border:1px solid #ff9800;border-right:4px solid #ff9800;border-radius:6px;padding:8px 12px;margin:10px 0;font-size:12px;color:#ffcc80;';
+        box.innerHTML = `⚠️ <b>عدم توازن في الراحات:</b> ${maxDay} فيه ${max} راحة، و${minDay} فيه ${min}. يفضل التوزيع.`;
+
+        const hdr = rv.querySelector('.rest-page-header');
+        if (hdr && hdr.parentNode) hdr.parentNode.insertBefore(box, hdr.nextSibling);
+    }
+
+    // ============================================================
+    // 🚀 التشغيل
+    // ============================================================
+    function bootstrap() {
+        setTimeout(injectSettingsPanel, 500);
+        setTimeout(injectSettingsPanel, 2000);
+        setTimeout(checkDataHealth, 2500);
+        setTimeout(tryAutoBackup, 4000);
+
+        setInterval(() => {
+            try { injectAnomalies(); } catch(e) {}
+            try { injectWeatherMemory(); } catch(e) {}
+            try { checkRestBalance(); } catch(e) {}
+            try { injectSettingsPanel(); } catch(e) {}
+            try { enhanceLocationReport(); } catch(e) {}
+        }, 1500);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootstrap);
+    } else {
+        bootstrap();
+    }
+
+    console.log('✅ Smart Core v1 loaded — 8 features active');
+})();
+</script>
 </body>
 </html>
 ```
