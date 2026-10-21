@@ -25982,6 +25982,359 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('✅ Smart Core v1 loaded — 8 features active');
 })();
 </script>
+<!-- ============================================ -->
+<!-- ⚖️ توحيد مؤشر الكفاءة مع تفاصيل النقاط        -->
+<!-- ============================================ -->
+<script id="__reynard_unify_score_v1__">
+(function() {
+    'use strict';
+
+    if (window.__reynardUnifyScoreV1__) return;
+    window.__reynardUnifyScoreV1__ = true;
+
+    function patchRenderPersonalStats() {
+        if (typeof window.renderPersonalStats !== 'function') return false;
+        if (window.renderPersonalStats._unifiedScore) return true;
+
+        // احفظ الدالة الأصلية
+        var orig = window.renderPersonalStats;
+
+        window.renderPersonalStats = function() {
+            // 1. شغل الدالة الأصلية عشان تملأ باقي الأقسام
+            var r = orig.apply(this, arguments);
+
+            try {
+                if (typeof currentIdx === 'undefined' || currentIdx < 0) return r;
+                if (typeof people === 'undefined' || !people[currentIdx]) return r;
+                var p = people[currentIdx];
+
+                var rng = document.getElementById('stats-range').value;
+                var tM = parseInt(document.getElementById('sel-month').value) + 1;
+                var tY = parseInt(document.getElementById('sel-year').value);
+
+                var ptScore = 0;
+
+                // 2. احسب النقاط بنفس منطق البطاقة السفلية بالظبط
+                Object.keys(p.attendance).forEach(function(d) {
+                    var parts = d.split('-');
+                    var yNum = Number(parts[0]), mNum = Number(parts[1]);
+                    
+                    // فلترة حسب الفترة المختارة
+                    var inRange = 
+                        (rng === 'year' && yNum === tY) ||
+                        (rng === 'month' && yNum === tY && mNum === tM) ||
+                        rng === 'all';
+                    if (!inRange) return;
+
+                    var ent = p.attendance[d];
+                    if (!ent || !ent.s) return;
+
+                    var isPresent = ent.s.includes('حضور') || (typeof isTrainingStatus === 'function' && isTrainingStatus(ent.s));
+                    
+                    if (isPresent) {
+                        // 10 نقاط حضور
+                        ptScore += 10;
+                        
+                        // +10 لو دورة تدريبية
+                        if (typeof isTrainingStatus === 'function' && isTrainingStatus(ent.s)) {
+                            ptScore += 10;
+                        }
+
+                        // نقاط الأماكن
+                        var locs = ent.locations || (ent.l ? [ent.l] : []);
+                        var weatherKey = weatherData[d];
+                        var weatherBonus = 0;
+                        if (weatherKey && typeof getWeatherInfo === 'function') {
+                            var wInfo = getWeatherInfo(weatherKey);
+                            if (wInfo) weatherBonus = wInfo.bonus;
+                        }
+
+                        locs.forEach(function(loc) {
+                            if (typeof calculateLocationBonus === 'function') {
+                                ptScore += calculateLocationBonus(loc, weatherBonus);
+                            }
+                        });
+                        
+                        // ملاحظة: لو عايز تضيف نقاط التخرج والرحلات هنا كمان، ممكن نضيفهم
+                        // لكن المؤشر القديم كان بيحسب الحضور + الأماكن بس. 
+                        // خلينا نضيفهم عشان يبقى مطابق 100% للبطاقة السفلية:
+                        
+                        // مكافأة التخرج
+                        if (locs.length > 0 && typeof calculateGraduationBonus === 'function') {
+                            var gb = calculateGraduationBonus(d);
+                            if (gb > 0) {
+                                var hasEligible = locs.some(function(loc) { 
+                                    return loc.includes('ب: رئيسية') || loc.includes('ب: ملاعب') || loc.includes('طريق رئيسى') || loc.includes('مشرف عام'); 
+                                });
+                                if (hasEligible) ptScore += gb;
+                            }
+                        }
+
+                        // مكافأة الرحلات
+                        if (locs.length > 0 && tripData[d]) {
+                            locs.forEach(function(loc) {
+                                if (loc.includes('طريق رئيسى')) ptScore += 8;
+                                else if (loc.includes('ب: رئيسية')) ptScore += 6;
+                                else if (loc.includes('م: إدارى')) ptScore += 5;
+                            });
+                        }
+
+                    } else if (ent.s.includes('غياب')) {
+                        ptScore -= 25;
+                    }
+                });
+
+                // 3. تحديث مؤشر الكفاءة العلوي بالرقم الجديد
+                var summary = document.getElementById('profile-points-summary');
+                if (summary) {
+                    summary.innerHTML = 
+                        `<span style="font-size:14px; color:#fff;">مؤشر الكفاءة:</span> ` +
+                        `<b style="font-size:26px; color:${ptScore >= 0 ? '#0f0' : '#ff4d4d'}">${ptScore}</b>`;
+                }
+
+            } catch(e) {
+                console.warn('Score unify error:', e);
+            }
+
+            return r;
+        };
+        
+        window.renderPersonalStats._unifiedScore = true;
+        return true;
+    }
+
+    function bootstrap() {
+        patchRenderPersonalStats();
+        setInterval(patchRenderPersonalStats, 1000);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootstrap);
+    } else {
+        bootstrap();
+    }
+
+    console.log('✅ Unify Score v1 loaded');
+})();
+</script>
+<!-- ============================================ -->
+<!-- ⚖️ توحيد تقييم التحليلات مع معايير العدالة  -->
+<!-- يصلح خطأ الحساب القديم في صفحة التحليلات     -->
+<!-- ============================================ -->
+<script id="__reynard_unify_analytics_v1__">
+(function() {
+    'use strict';
+
+    if (window.__reynardUnifyAnalyticsV1__) return;
+    window.__reynardUnifyAnalyticsV1__ = true;
+
+    console.log('⚖️ Unify Analytics v1 loading...');
+
+    function patchRenderGeneralAnalytics() {
+        if (typeof window.renderGeneralAnalytics !== 'function') return false;
+        if (window.renderGeneralAnalytics._unifiedAnalytics) return true;
+
+        window.renderGeneralAnalytics = function() {
+            let y = document.getElementById('analytics-year').value,
+                m = parseInt(document.getElementById('analytics-month').value);
+            let daysInMonth = new Date(y, m, 0).getDate();
+
+            // 1. رسم الأقسام الأساسية
+            if (typeof renderOverallSystemAnalytics === 'function') renderOverallSystemAnalytics(y, m, daysInMonth);
+            if (typeof renderAnalyticsGeneralEvents === 'function') renderAnalyticsGeneralEvents(y, m, daysInMonth);
+            if (typeof renderHealingCards === 'function') renderHealingCards(y, m, daysInMonth);
+            if (typeof renderWarningCards === 'function') renderWarningCards(y, m, daysInMonth);
+
+            // 2. حساب التقييم الفردي
+            let reportHTML = "", evaluatedCount = 0, allScores = [];
+            
+            people.forEach(person => {
+                let stats = { totalRecorded: 0, present: 0, absent: 0, leaves: 0, violations: 0, delays: 0, missions: 0, weatherBonus: 0, tripBonus: 0, graduationBonus: 0, trainingBonus: 0 };
+                let highestRoleBonus = 0;
+                let dailyPointsSum = 0; // مجموع نقاط المكافآت اليومية (طقس، أماكن، تخرج، رحلات، تدريب، قيادة يومية)
+
+                for (let d = 1; d <= daysInMonth; d++) {
+                    let dStr = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                    let entry = person.attendance[dStr];
+                    let events = typeof getDailyEvents === 'function' ? getDailyEvents(dStr) : [];
+                    
+                    // حساب المخالفات
+                    events.forEach(ev => {
+                        if (ev.person === person.name) {
+                            if (ev.type === 'تجاوز') stats.violations++;
+                            if (ev.type === 'تأخير') stats.delays++;
+                        }
+                    });
+
+                    if (entry && entry.s) {
+                        stats.totalRecorded++;
+                        if (entry.s.includes('حضور') || (typeof isTrainingStatus === 'function' && isTrainingStatus(entry.s))) {
+                            stats.present++;
+                            if (typeof isTrainingStatus === 'function' && isTrainingStatus(entry.s)) {
+                                stats.trainingBonus += 10;
+                            }
+                            let locs = entry.locations || (entry.l ? [entry.l] : []);
+                            
+                            // ⭐ السحر هنا: بنجمع نقاط اليوم من الدالة الموحدة
+                            try {
+                                let dayResult = typeof calculateTotalPointsForDay === 'function' ? calculateTotalPointsForDay(person, dStr) : { total: 0, details: [] };
+                                dailyPointsSum += dayResult.total;
+                                
+                                // استخراج التفاصيل للعرض في البادجات
+                                dayResult.details.forEach(det => {
+                                    if (det.label.includes('الطقس')) stats.weatherBonus += det.points;
+                                    if (det.label.includes('رحلة')) stats.tripBonus += det.points;
+                                    if (det.label.includes('تخرج')) stats.graduationBonus += det.points;
+                                });
+                            } catch(e) {}
+
+                            // حساب مكافأة القيادة الشهرية
+                            if (locs.length > 0) {
+                                locs.forEach(loc => {
+                                    if (loc.includes('مدير الوردية')) highestRoleBonus = Math.max(highestRoleBonus, 5);
+                                    else if (loc.includes('نائب مدير الوردية')) highestRoleBonus = Math.max(highestRoleBonus, 4);
+                                    else if (loc.includes('مشرف عام')) highestRoleBonus = Math.max(highestRoleBonus, 3);
+                                    else if (loc.includes('مشرف قطاع')) highestRoleBonus = Math.max(highestRoleBonus, 2);
+                                    else if (loc.includes('مساعد مشرف')) highestRoleBonus = Math.max(highestRoleBonus, 1);
+                                    else if (loc.includes('حكمدار')) highestRoleBonus = Math.max(highestRoleBonus, 1);
+                                });
+                            }
+                        } else if (entry.s.includes('غياب')) {
+                            stats.absent++;
+                        } else if (entry.s.includes('مأمورية')) {
+                            stats.missions++;
+                        } else {
+                            stats.leaves++;
+                        }
+                        if (entry.n && entry.n.length > 3) stats.violations++;
+                    }
+                }
+
+                if (stats.totalRecorded === 0) return;
+                evaluatedCount++;
+
+                // ⭐ الحساب النهائي الموحد (يطابق دليل المعايير 100%)
+                // 10 نقاط لكل حضور + 5 نقاط مأمورية - الخصومات + مجموع مكافآت الأيام + مكافأة القيادة
+                let score = (stats.present * 10) + (stats.missions * 5) 
+                          - (stats.absent * 25) - (stats.violations * 15) - (stats.delays * 10) 
+                          + dailyPointsSum + highestRoleBonus;
+
+                // مكافآت إضافية للقيادات (شهرية)
+                let leaderBonus = 0;
+                let cmd = supremeCommand.find(c => c.name === person.name);
+                if (cmd) {
+                    let baseLeaderBonus = typeof getLeaderBonusFromRole === 'function' ? getLeaderBonusFromRole(cmd.role) : 0;
+                    if (baseLeaderBonus > 0) {
+                        let extraLeaderBonus = 0;
+                        let hasTrip = Object.keys(tripData).some(date => {
+                            let [yDate, mDate] = date.split('-').map(Number);
+                            return yDate === parseInt(y) && mDate === m;
+                        });
+                        let hasGraduation = Object.keys(generalEventsData).some(date => {
+                            let [yDate, mDate] = date.split('-').map(Number);
+                            return yDate === parseInt(y) && mDate === m && generalEventsData[date].typeName.includes('حفلات تخرج');
+                        });
+                        let hasTraining = Object.values(person.attendance).some(entry => entry && isTrainingStatus(entry.s));
+                        
+                        if (hasTrip) extraLeaderBonus += 5;
+                        if (hasGraduation) extraLeaderBonus += 5;
+                        if (hasTraining) extraLeaderBonus += 3;
+                        
+                        leaderBonus = baseLeaderBonus + extraLeaderBonus;
+                        score += leaderBonus;
+                    }
+                }
+
+                allScores.push({ name: person.name, rank: person.rank, score, total: stats.totalRecorded, stats, isLeader: (highestRoleBonus >= 2) });
+
+                // تحديد الحالة والألوان للعرض
+                let statusText = "مستقر 🛡️", statusBg = "rgba(0,150,255,0.1)", statusColor = "#3498db", awardIcon = "🛡️";
+                if (stats.absent >= 5 || stats.violations >= 3) { statusText = "مجلس تأديب ⚖️"; statusBg = "rgba(139,0,0,0.25)"; statusColor = "#ff3333"; awardIcon = "⚖️"; }
+                else if (stats.absent >= 3) { statusText = "استدعاء فوري 📢"; statusBg = "rgba(220,20,60,0.2)"; statusColor = "#ff4d4d"; awardIcon = "📢"; }
+                else if (stats.violations === 2 || stats.absent === 2) { statusText = "خرق التعليمات 🚨"; statusBg = "rgba(255,69,0,0.2)"; statusColor = "#ff6600"; awardIcon = "🚨"; }
+                else if (stats.violations === 1 || stats.absent === 1) { statusText = "تراجع حاد 📉"; statusBg = "rgba(255,140,0,0.15)"; statusColor = "orange"; awardIcon = "📉"; }
+                else if (score >= 120 && stats.absent === 0 && stats.violations === 0) { statusText = "انضباط مثالي 🎖️"; statusBg = "rgba(212,175,55,0.2)"; statusColor = "var(--gold)"; awardIcon = "🎖️"; }
+                else if (score >= 80 && stats.absent === 0 && stats.violations === 0) { statusText = "تنفيذ دقيق ⚔️"; statusBg = "rgba(0,255,0,0.15)"; statusColor = "#0f0"; awardIcon = "⚔️"; }
+                else if (score >= 50 && stats.absent === 0) { statusText = "كفاءة عالية ⭐"; statusBg = "rgba(0,255,127,0.15)"; statusColor = "#00ff7f"; awardIcon = "⭐"; }
+                else if (stats.present > 0 && stats.absent === 0) { statusText = "عنصر فعال ⚡"; statusBg = "rgba(0,206,209,0.15)"; statusColor = "#00ced1"; awardIcon = "⚡"; }
+
+                let evalBorderColor = (stats.absent >= 2 || stats.violations >= 2) ? "#ff4d4d" : (stats.absent === 1 || stats.violations === 1) ? "orange" : "#00ff00";
+
+                // عرض البادجات
+                let bonusInfo = "";
+                if (stats.weatherBonus > 0) bonusInfo += `<span style="color:#00d2ff;">🌙 +${stats.weatherBonus}</span> `;
+                if (stats.tripBonus > 0) bonusInfo += `<span style="color:#ff9800;">🚌 +${stats.tripBonus}</span>`;
+                if (stats.graduationBonus > 0) bonusInfo += `<span style="color:#ffd700;">🎓 +${stats.graduationBonus}</span>`;
+                if (stats.trainingBonus > 0) bonusInfo += `<span style="color:#00bcd4;">🎓 تدريب +${stats.trainingBonus}</span>`;
+                if (leaderBonus > 0) bonusInfo += `<span style="color:#D4AF37;">👑 +${leaderBonus} (قيادة)</span>`;
+
+                reportHTML +=
+                    `<div style="background:linear-gradient(135deg,#161616,#0d0d0d); border:1px solid #2d2d2d; border-right:4px solid ${evalBorderColor}; padding:14px; margin-bottom:12px; border-radius:8px;"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:5px;"><div><span style="font-size:14px; color:#fff; font-weight:bold;">${person.name}</span><div style="font-size:11px; color:var(--gold);">${person.rank}</div></div><div style="display:flex; align-items:center; gap:6px;"><span style="font-size:11px; padding:4px 8px; border-radius:4px; background:${statusBg}; color:${statusColor}; border:1px solid ${statusColor}; font-weight:bold;">${awardIcon} ${statusText}</span><span style="font-size:11px; padding:4px 8px; border-radius:4px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid #444; font-weight:bold;">${score} نقطة</span></div></div><div style="display:flex; justify-content:space-between; border-top:1px solid #222; padding-top:8px; font-size:11px; color:#aaa; flex-wrap:wrap; gap:5px;"><span>حضور: <b style="color:#0f0;">${stats.present}</b></span><span>غياب: <b style="color:#ff4d4d;">${stats.absent}</b></span><span>تأخير: <b style="color:orange;">${stats.delays}</b></span><span>مخالفات: <b style="color:#ff4d4d;">${stats.violations}</b></span>${bonusInfo ? `<span>${bonusInfo}</span>` : ''}</div></div>`;
+            });
+
+            document.getElementById('analytics-report-list').innerHTML = evaluatedCount === 0 ?
+                `<div style="text-align:center; color:#666; padding:20px;">لا توجد بيانات 📡</div>` : reportHTML;
+
+            // 3. رسم قاعة الأوسمة
+            let monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+            let mName = monthNames[m - 1];
+            allScores.sort((a, b) => b.score - a.score);
+            let goldenCardDiv = document.getElementById('golden-card-container');
+            let awardsHtml = "";
+            let qualifiedAwards = allScores.filter(s => s.total >= 5 && s.score > 0);
+            let topCount = Math.min(15, qualifiedAwards.length);
+            
+            if (topCount > 0) {
+                awardsHtml += `
+                    <div class="collapsible-header" onclick="toggleCollapsible('golden-cards-content')" style="border-color:#D4AF37;">
+                        <span>🏆 قاعة أوسمة الشرف (${topCount})</span>
+                        <span class="arrow open" id="golden-cards-arrow">▼</span>
+                    </div>
+                    <div id="golden-cards-content" class="collapsible-content open">
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-top:10px;">
+                `;
+                for (let i = 0; i < topCount; i++) {
+                    let hero = qualifiedAwards[i];
+                    let award = awardTiers[i % awardTiers.length];
+                    let praise = hero.isLeader ? leaderPraises[i % leaderPraises.length] : soldierPraises[i % soldierPraises.length];
+                    awardsHtml += `
+                        <div class="award-card" style="${award.style}">
+                            <div style="font-size:40px; position:absolute; left:10px; top:10px; opacity:0.2; transform:rotate(-15deg);">${award.icon}</div>
+                            <h3 style="margin:0 0 10px 0; font-size:16px;">${award.title}</h3>
+                            <p style="font-size:15px; margin:0 0 10px 0; font-weight:bold;">${hero.rank} / ${hero.name}</p>
+                            <p style="font-size:12px; margin-bottom:10px;">(${hero.score} نقطة) - ${mName} ${y}</p>
+                            <p style="font-size:11px; margin-bottom:15px; font-style:italic;">${praise}</p>
+                            <button onclick="sendGoldenCardWhatsApp('${hero.name}', '${hero.rank}', '${mName}', '${y}', ${hero.score}, '${award.title}', ${i}, ${hero.isLeader})" style="background:rgba(0,0,0,0.6); color:#fff; border:1px solid rgba(255,255,255,0.5); padding:8px 15px; border-radius:5px; cursor:pointer; font-size:12px;">📲 إرسال الشهادة</button>
+                        </div>
+                    `;
+                }
+                awardsHtml += `</div></div>`;
+            }
+            goldenCardDiv.innerHTML = awardsHtml;
+
+            // 4. رسم الأقسام المتبقية
+            if (typeof renderMonthlyHonors === 'function') renderMonthlyHonors(parseInt(y), m);
+            if (typeof renderHealingTelegrams === 'function') renderHealingTelegrams(parseInt(y), m);
+        };
+
+        window.renderGeneralAnalytics._unifiedAnalytics = true;
+        return true;
+    }
+
+    function bootstrap() {
+        patchRenderGeneralAnalytics();
+        setInterval(patchRenderGeneralAnalytics, 1000);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootstrap);
+    } else {
+        bootstrap();
+    }
+
+    console.log('✅ Unify Analytics v1 loaded');
+})();
+</script>
 </body>
 </html>
 ```
