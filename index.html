@@ -27145,6 +27145,719 @@ console.log('🌙 Night Leave Calendar v3 loaded');
     console.log('🟢 كل شيء يعمل دون المساس بأي ميزة أخرى');
 })();
 </script>
+<!-- ============================================ -->
+<!-- 🎯 Reynard Master Unify Complete v1           -->
+<!-- كود واحد شامل يحل 9 مشاكل دفعة واحدة         -->
+<!-- لا يمس أي ميزة أخرى — يحمي كل الأنظمة        -->
+<!-- ============================================ -->
+<script id="__reynard_master_unify_complete_v1__">
+(function() {
+    'use strict';
+
+    if (window.__reynardMasterUnifyCompleteV1__) return;
+    window.__reynardMasterUnifyCompleteV1__ = true;
+
+    console.log('🎯 Master Unify Complete v1 — بدء التطبيق...');
+
+    // ============================================
+    // PART 1: دوال مساعدة آمنة (Safe Helpers)
+    // ============================================
+    function isCasual(s) {
+        if (!s) return false;
+        if (s.indexOf('نصف') !== -1) return false;
+        return s.indexOf('🟠') !== -1 || s.indexOf('عارضة') !== -1;
+    }
+
+    function isTraining(s) {
+        if (!s) return false;
+        return s.trim().startsWith('دورة');
+    }
+
+    function safeWeatherInfo(key) {
+        if (!key) return null;
+        try {
+            if (typeof getWeatherInfo === 'function') return getWeatherInfo(key);
+        } catch(e) {}
+        return null;
+    }
+
+    function safeLocationBonus(loc, weatherBonus) {
+        if (!loc) return 0;
+        try {
+            if (typeof calculateLocationBonus === 'function') {
+                return calculateLocationBonus(loc, weatherBonus || 0);
+            }
+        } catch(e) {}
+        return 0;
+    }
+
+    function safeGraduationBonus(dateKey) {
+        try {
+            if (typeof calculateGraduationBonus === 'function') {
+                return calculateGraduationBonus(dateKey);
+            }
+        } catch(e) {}
+        return 0;
+    }
+
+    function safeLeaderBase(role) {
+        if (!role) return 0;
+        try {
+            if (typeof getLeaderBonusFromRole === 'function') return getLeaderBonusFromRole(role);
+        } catch(e) {}
+        return 0;
+    }
+
+    function isLeaderLocation(loc) {
+        if (!loc) return false;
+        return /مدير|نائب|مشرف|حكمدار|مساعد/.test(loc);
+    }
+
+    // ============================================
+    // PART 2: ⭐ الدالة المركزية الموحدة
+    // ============================================
+    function calcDay(person, dateKey) {
+        if (!person || !person.attendance) return { total: 0, details: [] };
+        var entry = person.attendance[dateKey];
+        if (!entry || !entry.s) return { total: 0, details: [] };
+        var s = entry.s;
+
+        // 1) عارضة = -5
+        if (isCasual(s)) {
+            return { total: -5, details: [{ label: '🟠 عارضة (ظرف طارئ)', points: -5 }] };
+        }
+
+        // 2) غياب = -25
+        if (s.indexOf('غياب') !== -1) {
+            return { total: -25, details: [{ label: '🚫 غياب', points: -25 }] };
+        }
+
+        // 3) مأمورية = +5
+        if (s.indexOf('مأمورية') !== -1) {
+            return { total: 5, details: [{ label: '💼 مأمورية', points: 5 }] };
+        }
+
+        // 4) حضور؟
+        var isPresent = s.indexOf('حضور') !== -1 || isTraining(s);
+        if (!isPresent) return { total: 0, details: [] };
+
+        // ===== حاضر =====
+        var total = 10;
+        var details = [{ label: '✅ حضور أساسي', points: 10 }];
+
+        // تدريب
+        if (isTraining(s)) {
+            total += 10;
+            details.push({ label: '🎓 مكافأة تدريب', points: 10 });
+        }
+
+        // جلب الأماكن والطقس
+        var locs = entry.locations || (entry.l ? [entry.l] : []);
+        var weatherBonus = 0;
+        try {
+            if (typeof weatherData !== 'undefined' && weatherData && weatherData[dateKey]) {
+                var wInfo = safeWeatherInfo(weatherData[dateKey]);
+                if (wInfo) weatherBonus = wInfo.bonus || 0;
+            }
+        } catch(e) {}
+
+        // مكافأة الطقس
+        if (weatherBonus > 0) {
+            total += weatherBonus;
+            details.push({ label: '🌦️ مكافأة الطقس', points: weatherBonus });
+        }
+
+        // ⭐ مكافآت الأماكن (دائماً — الإصلاح الرئيسي)
+        locs.forEach(function(loc) {
+            var lb = safeLocationBonus(loc, weatherBonus);
+            if (lb > 0) {
+                total += lb;
+                var label = '📍 ' + loc;
+                try {
+                    if (typeof LOCATION_BONUS_MAP !== 'undefined') {
+                        for (var key in LOCATION_BONUS_MAP) {
+                            if (loc.indexOf(key) !== -1) {
+                                label = '📍 ' + LOCATION_BONUS_MAP[key].label;
+                                break;
+                            }
+                        }
+                    }
+                } catch(e) {}
+                details.push({ label: label, points: lb });
+            }
+        });
+
+        // مكافأة قيادة يومية (+2)
+        if (locs.some(isLeaderLocation)) {
+            total += 2;
+            details.push({ label: '👑 مكافأة قيادة يومية', points: 2 });
+        }
+
+        // مكافأة تخرج
+        var gb = safeGraduationBonus(dateKey);
+        if (gb > 0 && locs.some(function(l) {
+            return l.indexOf('ب: رئيسية') !== -1 || l.indexOf('ب: ملاعب') !== -1 ||
+                   l.indexOf('طريق رئيسى') !== -1 || l.indexOf('مشرف عام') !== -1;
+        })) {
+            total += gb;
+            details.push({ label: '🎓 مكافأة تخرج', points: gb });
+        }
+
+        // مكافأة رحلة
+        try {
+            if (typeof tripData !== 'undefined' && tripData && tripData[dateKey] && locs.length > 0) {
+                locs.forEach(function(loc) {
+                    if (loc.indexOf('طريق رئيسى') !== -1) {
+                        total += 8;
+                        details.push({ label: '🚌 رحلة (طريق رئيسي)', points: 8 });
+                    } else if (loc.indexOf('ب: رئيسية') !== -1) {
+                        total += 6;
+                        details.push({ label: '🚌 رحلة (بوابة رئيسية)', points: 6 });
+                    } else if (loc.indexOf('م: إدارى') !== -1) {
+                        total += 5;
+                        details.push({ label: '🚌 رحلة (مبنى إداري)', points: 5 });
+                    }
+                });
+            }
+        } catch(e) {}
+
+        return { total: total, details: details };
+    }
+
+    // ============================================
+    // PART 3: مكافأة القيادة الشهرية
+    // ============================================
+    function calcLeaderMonthly(person, y, m) {
+        if (!person || !person.name) return 0;
+        if (typeof supremeCommand === 'undefined' || !Array.isArray(supremeCommand)) return 0;
+
+        var cmd = null;
+        for (var i = 0; i < supremeCommand.length; i++) {
+            if (supremeCommand[i].name === person.name) { cmd = supremeCommand[i]; break; }
+        }
+        if (!cmd) return 0;
+
+        var base = safeLeaderBase(cmd.role);
+        if (base === 0) return 0;
+
+        var extra = 0;
+        var mStr = y + '-' + String(m).padStart(2, '0');
+
+        try {
+            if (typeof tripData !== 'undefined' && tripData) {
+                var hasTrip = false;
+                for (var d in tripData) { if (d.indexOf(mStr) === 0) { hasTrip = true; break; } }
+                if (hasTrip) extra += 5;
+            }
+        } catch(e) {}
+
+        try {
+            if (typeof generalEventsData !== 'undefined' && generalEventsData) {
+                var hasGrad = false;
+                for (var d2 in generalEventsData) {
+                    if (d2.indexOf(mStr) === 0) {
+                        var ev = generalEventsData[d2];
+                        if (ev.typeName && ev.typeName.indexOf('حفلات تخرج') !== -1) { hasGrad = true; break; }
+                    }
+                }
+                if (hasGrad) extra += 5;
+            }
+        } catch(e) {}
+
+        try {
+            if (person.attendance) {
+                var hasTrain = false;
+                for (var d3 in person.attendance) {
+                    if (d3.indexOf(mStr) !== 0) continue;
+                    var e3 = person.attendance[d3];
+                    if (e3 && isTraining(e3.s)) { hasTrain = true; break; }
+                }
+                if (hasTrain) extra += 3;
+            }
+        } catch(e) {}
+
+        return base + extra;
+    }
+
+    // ============================================
+    // PART 4: حساب إجمالي الفترة
+    // ============================================
+    function inRange(dateKey, rangeType, tY, tM) {
+        var parts = dateKey.split('-');
+        var y = parseInt(parts[0]), m = parseInt(parts[1]);
+        if (rangeType === 'year') return y === tY;
+        if (rangeType === 'month') return y === tY && m === tM;
+        return true; // all
+    }
+
+    function calcRange(person, rangeType, tY, tM) {
+        var total = 0;
+        if (!person || !person.attendance) return 0;
+        for (var d in person.attendance) {
+            if (!inRange(d, rangeType, tY, tM)) continue;
+            total += calcDay(person, d).total;
+        }
+        return total;
+    }
+
+    function calcRangeLeader(person, rangeType, tY, tM) {
+        if (rangeType === 'month') return calcLeaderMonthly(person, tY, tM);
+        if (rangeType === 'year') {
+            var t = 0;
+            for (var mo = 1; mo <= 12; mo++) t += calcLeaderMonthly(person, tY, mo);
+            return t;
+        }
+        // all
+        if (!person || !person.attendance) return 0;
+        var seen = {};
+        for (var d in person.attendance) {
+            var p = d.split('-');
+            seen[p[0] + '-' + p[1]] = true;
+        }
+        var tot = 0;
+        for (var k in seen) {
+            var kp = k.split('-');
+            tot += calcLeaderMonthly(person, parseInt(kp[0]), parseInt(kp[1]));
+        }
+        return tot;
+    }
+
+    // ============================================
+    // PART 5: Override calculateTotalPointsForDay
+    // ============================================
+    window.calculateTotalPointsForDay = function(person, dateKey) {
+        return calcDay(person, dateKey);
+    };
+    window.calculateTotalPointsForDay._casualPatched = true;
+    window.calculateTotalPointsForDay._unifiedV1 = true;
+
+    // ============================================
+    // PART 6: Override renderProfilePointsDetails
+    // (يعرض الأيام السلبية بالأحمر + ملخص)
+    // ============================================
+    window.renderProfilePointsDetails = function() {
+        var container = document.getElementById('profile-points-details');
+        if (!container) return;
+        if (typeof currentIdx === 'undefined' || currentIdx < 0) return;
+        if (typeof people === 'undefined' || !people[currentIdx]) return;
+
+        var p = people[currentIdx];
+        var rEl = document.getElementById('stats-range');
+        var mEl = document.getElementById('sel-month');
+        var yEl = document.getElementById('sel-year');
+        if (!rEl || !mEl || !yEl) return;
+
+        var rng = rEl.value;
+        var tM = parseInt(mEl.value) + 1;
+        var tY = parseInt(yEl.value);
+
+        var html = '', hasData = false, runningTotal = 0;
+        var keys = Object.keys(p.attendance || {}).sort();
+
+        for (var i = 0; i < keys.length; i++) {
+            var d = keys[i];
+            if (!inRange(d, rng, tY, tM)) continue;
+
+            var res = calcDay(p, d);
+            if (res.total === 0 && res.details.length === 0) continue;
+            hasData = true;
+            runningTotal += res.total;
+
+            var neg = res.total < 0;
+            var border = neg ? '#ff4d4d' : '#00ff88';
+            var col = neg ? '#ff4d4d' : '#00ff88';
+
+            var ent = p.attendance[d];
+            var locs = ent.locations || (ent.l ? [ent.l] : []);
+            var locsDisplay = locs.length > 0 ? locs.join(' + ') : 'غير محدد';
+
+            var detailsHtml = '';
+            for (var j = 0; j < res.details.length; j++) {
+                var det = res.details[j];
+                var pColor = det.points >= 0 ? '#00ff88' : '#ff4d4d';
+                detailsHtml += '<div class="point-detail-item"><span>' + det.label + '</span><span class="pval" style="color:' + pColor + '">' + (det.points >= 0 ? '+' : '') + det.points + '</span></div>';
+            }
+
+            html += '<div style="background:linear-gradient(135deg,rgba(0,0,0,0.6),rgba(0,0,0,0.8));border:1px solid ' + border + ';border-right:4px solid ' + border + ';border-radius:6px;padding:10px;margin-bottom:8px;">';
+            html += '<div style="color:' + col + ';font-size:12px;font-weight:bold;margin-bottom:6px;">📅 ' + d + '</div>';
+            html += '<div style="color:#888;font-size:11px;margin-bottom:6px;">📍 ' + locsDisplay + '</div>';
+            html += detailsHtml;
+            html += '<div style="color:' + col + ';font-size:13px;font-weight:bold;margin-top:6px;border-top:1px dashed #333;padding-top:6px;">📊 مجموع اليوم: ' + (res.total >= 0 ? '+' : '') + res.total + '</div>';
+            html += '</div>';
+        }
+
+        if (!hasData) {
+            container.innerHTML = '<div style="color:#666;text-align:center;padding:10px;">لا توجد نقاط مسجلة في هذه الفترة</div>';
+            return;
+        }
+
+        var leaderBonus = calcRangeLeader(p, rng, tY, tM);
+        var grandTotal = runningTotal + leaderBonus;
+
+        html += '<div style="background:linear-gradient(135deg,rgba(212,175,55,0.2),rgba(212,175,55,0.05));border:2px solid #D4AF37;border-radius:8px;padding:14px;margin-top:12px;">';
+        html += '<div style="color:#D4AF37;font-size:13px;font-weight:bold;margin-bottom:8px;text-align:center;">📊 مجموع الفترة بالكامل</div>';
+        html += '<div style="display:flex;justify-content:space-between;font-size:12px;color:#ddd;margin-bottom:4px;"><span>مجموع الأيام:</span><span style="font-weight:bold;">' + (runningTotal >= 0 ? '+' : '') + runningTotal + '</span></div>';
+        if (leaderBonus > 0) {
+            html += '<div style="display:flex;justify-content:space-between;font-size:12px;color:#D4AF37;margin-bottom:4px;"><span>👑 مكافأة القيادة:</span><span style="font-weight:bold;">+' + leaderBonus + '</span></div>';
+        }
+        html += '<div style="border-top:1px dashed #D4AF37;margin-top:8px;padding-top:8px;text-align:center;"><div style="color:#D4AF37;font-size:24px;font-weight:bold;">' + (grandTotal >= 0 ? '+' : '') + grandTotal + '</div></div>';
+        html += '</div>';
+
+        container.innerHTML = html;
+    };
+    window.renderProfilePointsDetails._showBasePatched = true;
+    window.renderProfilePointsDetails._unifiedV1 = true;
+
+    // ============================================
+    // PART 7: Override renderPersonalStats
+    // ============================================
+    window.renderPersonalStats = function() {
+        if (typeof currentIdx === 'undefined' || currentIdx < 0) return;
+        if (typeof people === 'undefined' || !people[currentIdx]) return;
+
+        var p = people[currentIdx];
+        var rEl = document.getElementById('stats-range');
+        var mEl = document.getElementById('sel-month');
+        var yEl = document.getElementById('sel-year');
+        if (!rEl || !mEl || !yEl) return;
+
+        var rng = rEl.value;
+        var tM = parseInt(mEl.value) + 1;
+        var tY = parseInt(yEl.value);
+
+        // 1) جمع الإحصاءات
+        var stats = {}, locStats = {};
+        for (var d in p.attendance) {
+            if (!inRange(d, rng, tY, tM)) continue;
+            var s = p.attendance[d].s;
+            if (s) stats[s] = (stats[s] || 0) + 1;
+            var locs = p.attendance[d].locations || (p.attendance[d].l ? [p.attendance[d].l] : []);
+            if (locs.length > 0) {
+                var key = locs.slice().sort().join(' + ');
+                locStats[key] = (locStats[key] || 0) + 1;
+            }
+        }
+
+        // 2) حساب النقاط الموحدة
+        var totalPoints = calcRange(p, rng, tY, tM);
+        var leaderBonus = calcRangeLeader(p, rng, tY, tM);
+        totalPoints += leaderBonus;
+
+        // 3) تحديث المؤشر العلوي
+        var summary = document.getElementById('profile-points-summary');
+        if (summary) {
+            var html = '<span style="font-size:14px;color:#fff;">مؤشر الكفاءة:</span> <b style="font-size:28px;color:' + (totalPoints >= 0 ? '#0f0' : '#ff4d4d') + '">' + totalPoints + '</b>';
+            if (leaderBonus > 0) {
+                html += '<div style="margin-top:10px;padding:8px 14px;background:rgba(212,175,55,0.15);border:1px dashed #D4AF37;border-radius:8px;color:#D4AF37;font-size:13px;font-weight:bold;">👑 مكافأة القيادة الشهرية: +' + leaderBonus + '</div>';
+            }
+            summary.innerHTML = html;
+        }
+
+        // 4) سجل الأحداث
+        var logsHtml = '';
+        if (typeof shiftDailyNotes !== 'undefined' && typeof getDailyEvents === 'function') {
+            for (var date in shiftDailyNotes) {
+                if (!inRange(date, rng, tY, tM)) continue;
+                var events = getDailyEvents(date);
+                events.forEach(function(ev) {
+                    if (ev.person !== p.name) return;
+                    var color = ev.type === 'تأخير' ? 'orange' : (ev.type === 'تجاوز' ? '#ff4d4d' : '#0f0');
+                    var guidance = ev.guidance ? ' 🪖' + ev.guidance : '';
+                    logsHtml += '<div style="border-bottom:1px dashed #333;padding:5px 0;color:' + color + ';font-size:11px;"><b>' + date + '</b>: ' + ev.type + ' - ' + ev.note + guidance + '</div>';
+                });
+            }
+        }
+        var evLog = document.getElementById('profile-events-log');
+        if (evLog) evLog.innerHTML = logsHtml || "<div style='text-align:center;color:#666;'>لا توجد سجلات 📡</div>";
+
+        // 5) جدول الحالات
+        var h = '';
+        for (var s in stats) h += '<div class="stat-line"><span>' + s + '</span> <b>' + stats[s] + ' يوم</b></div>';
+        var stBody = document.getElementById('stats-table-body');
+        if (stBody) stBody.innerHTML = h || '---';
+
+        // 6) جدول الأماكن
+        var lh = '';
+        var sortedLocs = Object.keys(locStats).sort(function(a,b){return locStats[b]-locStats[a];});
+        sortedLocs.forEach(function(k) {
+            lh += '<div class="stat-line"><span>' + k + '</span> <b>' + locStats[k] + ' يوم</b></div>';
+        });
+        var locBody = document.getElementById('loc-stats-body');
+        if (locBody) locBody.innerHTML = lh || '---';
+
+        // 7) التفاصيل
+        window.renderProfilePointsDetails();
+    };
+    window.renderPersonalStats._masterFixed = true;
+    window.renderPersonalStats._unifiedScore = true;
+    window.renderPersonalStats._casualPatched = true;
+    window.renderPersonalStats._casualHotfix = true;
+    window.renderPersonalStats._unifiedV1 = true;
+
+    // ============================================
+    // PART 8: Override renderGeneralAnalytics
+    // ============================================
+    function getStatusLabel(item) {
+        var s = item.stats;
+        if (s.absent >= 5 || s.violations >= 3) return { text: 'مجلس تأديب', icon: '⚖️', bg: 'rgba(139,0,0,0.25)', color: '#ff3333' };
+        if (s.absent >= 3) return { text: 'استدعاء فوري', icon: '📢', bg: 'rgba(220,20,60,0.2)', color: '#ff4d4d' };
+        if (s.violations === 2 || s.absent === 2) return { text: 'خرق التعليمات', icon: '🚨', bg: 'rgba(255,69,0,0.2)', color: '#ff6600' };
+        if (s.violations === 1 || s.absent === 1) return { text: 'تراجع حاد', icon: '📉', bg: 'rgba(255,140,0,0.15)', color: 'orange' };
+        if (item.score >= 120 && s.absent === 0 && s.violations === 0) return { text: 'انضباط مثالي', icon: '🎖️', bg: 'rgba(212,175,55,0.2)', color: '#D4AF37' };
+        if (item.score >= 80 && s.absent === 0 && s.violations === 0) return { text: 'تنفيذ دقيق', icon: '⚔️', bg: 'rgba(0,255,0,0.15)', color: '#0f0' };
+        if (item.score >= 50 && s.absent === 0) return { text: 'كفاءة عالية', icon: '⭐', bg: 'rgba(0,255,127,0.15)', color: '#00ff7f' };
+        if (s.present > 0 && s.absent === 0) return { text: 'عنصر فعال', icon: '⚡', bg: 'rgba(0,206,209,0.15)', color: '#00ced1' };
+        return { text: 'مستقر', icon: '🛡️', bg: 'rgba(0,150,255,0.1)', color: '#3498db' };
+    }
+
+    window.renderGeneralAnalytics = function() {
+        var yEl = document.getElementById('analytics-year');
+        var mEl = document.getElementById('analytics-month');
+        if (!yEl || !mEl) return;
+
+        var y = yEl.value;
+        var m = parseInt(mEl.value);
+        var daysInMonth = new Date(y, m, 0).getDate();
+        var monthNames = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+        var mName = monthNames[m-1];
+
+        // 1) الأقسام الأساسية
+        try { if (typeof renderOverallSystemAnalytics === 'function') renderOverallSystemAnalytics(y, m, daysInMonth); } catch(e) {}
+        try { if (typeof renderAnalyticsGeneralEvents === 'function') renderAnalyticsGeneralEvents(y, m, daysInMonth); } catch(e) {}
+        try { if (typeof renderHealingCards === 'function') renderHealingCards(y, m, daysInMonth); } catch(e) {}
+        try { if (typeof renderWarningCards === 'function') renderWarningCards(y, m, daysInMonth); } catch(e) {}
+
+        // 2) حساب النقاط الموحدة
+        var allScores = [];
+        if (typeof people !== 'undefined' && Array.isArray(people)) {
+            for (var pi = 0; pi < people.length; pi++) {
+                var person = people[pi];
+                var stats = { present: 0, absent: 0, violations: 0, delays: 0, total: 0 };
+                var score = 0;
+
+                for (var d = 1; d <= daysInMonth; d++) {
+                    var dStr = y + '-' + String(m).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+                    score += calcDay(person, dStr).total;
+                    var entry = person.attendance[dStr];
+                    if (entry && entry.s) {
+                        stats.total++;
+                        if (entry.s.indexOf('حضور') !== -1 || isTraining(entry.s)) stats.present++;
+                        else if (entry.s.indexOf('غياب') !== -1) stats.absent++;
+                    }
+                }
+
+                if (typeof shiftDailyNotes !== 'undefined' && typeof getDailyEvents === 'function') {
+                    for (var date in shiftDailyNotes) {
+                        var pp = date.split('-');
+                        if (parseInt(pp[0]) === parseInt(y) && parseInt(pp[1]) === m) {
+                            var events = getDailyEvents(date);
+                            for (var ei = 0; ei < events.length; ei++) {
+                                var ev = events[ei];
+                                if (ev.person !== person.name) continue;
+                                if (ev.type === 'تجاوز') stats.violations++;
+                                if (ev.type === 'تأخير') stats.delays++;
+                            }
+                        }
+                    }
+                }
+
+                var leaderBonus = calcLeaderMonthly(person, parseInt(y), m);
+                score += leaderBonus;
+
+                if (stats.total > 0) {
+                    var isLeader = false;
+                    if (typeof supremeCommand !== 'undefined' && Array.isArray(supremeCommand)) {
+                        for (var ci = 0; ci < supremeCommand.length; ci++) {
+                            if (supremeCommand[ci].name === person.name) { isLeader = true; break; }
+                        }
+                    }
+                    allScores.push({ name: person.name, rank: person.rank, score: score, stats: stats, isLeader: isLeader, leaderBonus: leaderBonus });
+                }
+            }
+        }
+
+        allScores.sort(function(a,b) { return b.score - a.score; });
+
+        // 3) قائمة التقييم
+        var reportHTML = '';
+        for (var i = 0; i < allScores.length; i++) {
+            var item = allScores[i];
+            var status = getStatusLabel(item);
+            var eb = (item.stats.absent >= 2 || item.stats.violations >= 2) ? '#ff4d4d'
+                   : (item.stats.absent === 1 || item.stats.violations === 1) ? 'orange'
+                   : '#00ff00';
+            var bonusInfo = item.leaderBonus > 0 ? '<span style="color:#D4AF37;">👑 +' + item.leaderBonus + '</span>' : '';
+
+            reportHTML += '<div style="background:linear-gradient(135deg,#161616,#0d0d0d);border:1px solid #2d2d2d;border-right:4px solid ' + eb + ';padding:14px;margin-bottom:12px;border-radius:8px;">';
+            reportHTML += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:5px;">';
+            reportHTML += '<div><span style="font-size:14px;color:#fff;font-weight:bold;">' + item.name + '</span><div style="font-size:11px;color:#D4AF37;">' + item.rank + '</div></div>';
+            reportHTML += '<div style="display:flex;align-items:center;gap:6px;">';
+            reportHTML += '<span style="font-size:11px;padding:4px 8px;border-radius:4px;background:' + status.bg + ';color:' + status.color + ';border:1px solid ' + status.color + ';font-weight:bold;">' + status.icon + ' ' + status.text + '</span>';
+            reportHTML += '<span style="font-size:11px;padding:4px 8px;border-radius:4px;background:rgba(255,255,255,0.05);color:#fff;border:1px solid #444;font-weight:bold;">' + item.score + ' نقطة</span>';
+            reportHTML += '</div></div>';
+            reportHTML += '<div style="display:flex;justify-content:space-between;border-top:1px solid #222;padding-top:8px;font-size:11px;color:#aaa;flex-wrap:wrap;gap:5px;">';
+            reportHTML += '<span>حضور: <b style="color:#0f0;">' + item.stats.present + '</b></span>';
+            reportHTML += '<span>غياب: <b style="color:#ff4d4d;">' + item.stats.absent + '</b></span>';
+            reportHTML += '<span>تأخير: <b style="color:orange;">' + item.stats.delays + '</b></span>';
+            reportHTML += '<span>مخالفات: <b style="color:#ff4d4d;">' + item.stats.violations + '</b></span>';
+            if (bonusInfo) reportHTML += '<span>' + bonusInfo + '</span>';
+            reportHTML += '</div></div>';
+        }
+
+        var rl = document.getElementById('analytics-report-list');
+        if (rl) rl.innerHTML = reportHTML || '<div style="text-align:center;color:#666;padding:20px;">لا توجد بيانات 📡</div>';
+
+        // 4) الأوسمة
+        var gc = document.getElementById('golden-card-container');
+        if (gc) {
+            var qualified = allScores.filter(function(s) { return s.stats.total >= 5 && s.score > 0; });
+            var topCount = Math.min(15, qualified.length);
+            if (topCount > 0 && typeof awardTiers !== 'undefined') {
+                var awardsHtml = '<div class="collapsible-header" onclick="toggleCollapsible(\'golden-cards-content\')" style="border-color:#D4AF37;"><span>🏆 قاعة أوسمة الشرف (' + topCount + ')</span><span class="arrow open" id="golden-cards-arrow">▼</span></div>';
+                awardsHtml += '<div id="golden-cards-content" class="collapsible-content open"><div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-top:10px;">';
+                for (var gi = 0; gi < topCount; gi++) {
+                    var hero = qualified[gi];
+                    var award = awardTiers[gi % awardTiers.length];
+                    var praises = hero.isLeader
+                        ? (typeof leaderPraises !== 'undefined' ? leaderPraises : [''])
+                        : (typeof soldierPraises !== 'undefined' ? soldierPraises : ['']);
+                    var praise = praises[gi % praises.length];
+                    awardsHtml += '<div class="award-card" style="' + award.style + '">';
+                    awardsHtml += '<div style="font-size:40px;position:absolute;left:10px;top:10px;opacity:0.2;transform:rotate(-15deg);">' + award.icon + '</div>';
+                    awardsHtml += '<h3 style="margin:0 0 10px 0;font-size:16px;">' + award.title + '</h3>';
+                    awardsHtml += '<p style="font-size:15px;margin:0 0 10px 0;font-weight:bold;">' + hero.rank + ' / ' + hero.name + '</p>';
+                    awardsHtml += '<p style="font-size:12px;margin-bottom:10px;">(' + hero.score + ' نقطة) - ' + mName + ' ' + y + '</p>';
+                    awardsHtml += '<p style="font-size:11px;margin-bottom:15px;font-style:italic;">' + praise + '</p>';
+                    awardsHtml += '<button onclick="sendGoldenCardWhatsApp(\'' + hero.name + '\',\'' + hero.rank + '\',\'' + mName + '\',\'' + y + '\',' + hero.score + ',\'' + award.title + '\',' + gi + ',' + hero.isLeader + ')" style="background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.5);padding:8px 15px;border-radius:5px;cursor:pointer;font-size:12px;">📲 إرسال الشهادة</button>';
+                    awardsHtml += '</div>';
+                }
+                awardsHtml += '</div></div>';
+                gc.innerHTML = awardsHtml;
+            } else {
+                gc.innerHTML = '';
+            }
+        }
+
+        // 5) الأقسام المساعدة
+        try { if (typeof renderMonthlyHonors === 'function') renderMonthlyHonors(parseInt(y), m); } catch(e) {}
+        try { if (typeof renderHealingTelegrams === 'function') renderHealingTelegrams(parseInt(y), m); } catch(e) {}
+
+        // 6) العطلات (في تأخير بسيط لتجنب التعارض)
+        setTimeout(function() {
+            try {
+                var hc = document.getElementById('analytics-holidays-container');
+                if (!hc) {
+                    var ec = document.getElementById('analytics-general-events-container');
+                    if (ec && ec.parentNode) {
+                        hc = document.createElement('div');
+                        hc.id = 'analytics-holidays-container';
+                        ec.parentNode.insertBefore(hc, ec);
+                    }
+                }
+                if (!hc) return;
+                var ph = {};
+                try {
+                    ph = (typeof publicHolidays !== 'undefined' && publicHolidays)
+                        ? publicHolidays
+                        : JSON.parse(localStorage.getItem('MIL_HOLIDAYS_V1') || '{}');
+                } catch(e) { ph = {}; }
+                var monthStr = String(m).padStart(2, '0');
+                var found = [];
+                for (var dk in ph) {
+                    if (dk.length === 10) {
+                        var parts = dk.split('-');
+                        if (parseInt(parts[0]) === parseInt(y) && parts[1] === monthStr) {
+                            var hol = ph[dk];
+                            var nm = typeof hol === 'string' ? hol : hol.name;
+                            var clr = (typeof hol === 'object' && hol.color) ? hol.color : '#00ff88';
+                            found.push({ day: parseInt(parts[2]), dateKey: dk, name: nm, color: clr });
+                        }
+                    }
+                }
+                found.sort(function(a,b){return a.day - b.day;});
+                if (found.length === 0) { hc.innerHTML = ''; return; }
+                var hhtml = '<div class="analytics-events-section" style="border-color:#00ff88;border-right:5px solid #00ff88;">';
+                hhtml += '<div class="analytics-events-title" style="color:#00ff88;">🏖️ العطلات الرسمية — ' + mName + ' ' + y + ' (' + found.length + ')</div>';
+                for (var fi = 0; fi < found.length; fi++) {
+                    var h = found[fi];
+                    var dDate = new Date(parseInt(y), m-1, h.day);
+                    var dn = (typeof daysArabic !== 'undefined') ? daysArabic[dDate.getDay()] : '';
+                    hhtml += '<div class="analytics-event-item" style="border-right-color:' + h.color + ';">';
+                    hhtml += '<div class="analytics-event-date" style="color:' + h.color + ';">📅 ' + h.dateKey + ' (' + dn + ')</div>';
+                    hhtml += '<div class="analytics-event-type" style="color:' + h.color + ';">🏖️ ' + h.name + '</div>';
+                    hhtml += '</div>';
+                }
+                hhtml += '</div>';
+                hc.innerHTML = hhtml;
+            } catch(e) {}
+        }, 250);
+    };
+    window.renderGeneralAnalytics._unifiedAnalytics = true;
+    window.renderGeneralAnalytics._unifiedV1 = true;
+
+    // ============================================
+    // PART 9: حارس دفاعي — يمنع الأكواد القديمة
+    // ============================================
+    setInterval(function() {
+        try {
+            if (window.renderPersonalStats && !window.renderPersonalStats._masterFixed) {
+                window.renderPersonalStats._masterFixed = true;
+                window.renderPersonalStats._unifiedScore = true;
+                window.renderPersonalStats._casualPatched = true;
+                window.renderPersonalStats._casualHotfix = true;
+            }
+            if (window.renderGeneralAnalytics && !window.renderGeneralAnalytics._unifiedAnalytics) {
+                window.renderGeneralAnalytics._unifiedAnalytics = true;
+            }
+            if (window.calculateTotalPointsForDay && !window.calculateTotalPointsForDay._casualPatched) {
+                window.calculateTotalPointsForDay._casualPatched = true;
+            }
+            if (window.renderProfilePointsDetails && !window.renderProfilePointsDetails._showBasePatched) {
+                window.renderProfilePointsDetails._showBasePatched = true;
+            }
+        } catch(e) {}
+    }, 500);
+
+    // ============================================
+    // PART 10: Auto-refresh + Listeners
+    // ============================================
+    // تحديث تلقائي كل 3 ثوانٍ إذا كنا في صفحة الملف الشخصي
+    setInterval(function() {
+        try {
+            var pv = document.getElementById('view-profile');
+            if (pv && !pv.classList.contains('hidden') && typeof currentIdx !== 'undefined' && currentIdx >= 0) {
+                var ae = document.activeElement;
+                if (!ae || (ae.tagName !== 'INPUT' && ae.tagName !== 'SELECT' && ae.tagName !== 'TEXTAREA')) {
+                    window.renderPersonalStats();
+                }
+            }
+        } catch(e) {}
+    }, 3000);
+
+    // الاستماع لتغيير القوائم
+    document.addEventListener('change', function(e) {
+        if (!e.target) return;
+        var id = e.target.id;
+        if (id === 'stats-range' || id === 'sel-month' || id === 'sel-year') {
+            setTimeout(function() {
+                try { window.renderPersonalStats(); } catch(e) {}
+            }, 100);
+        }
+        if (id === 'analytics-year' || id === 'analytics-month') {
+            setTimeout(function() {
+                try { window.renderGeneralAnalytics(); } catch(e) {}
+            }, 100);
+        }
+    }, true);
+
+    console.log('✅ Master Unify Complete v1 — جاهز');
+    console.log('✅ نقاط الأماكن تعمل كل يوم (صافي أو سيئ)');
+    console.log('✅ مكافأة القيادة تظهر في الملف والتحليلات');
+    console.log('✅ الأرقام موحدة 100%');
+    console.log('✅ الأيام السلبية تظهر بالأحمر');
+    console.log('✅ الأكواد القديمة محيَّدة تلقائياً');
+})();
+</script>
 </body>
 </html>
 ```
